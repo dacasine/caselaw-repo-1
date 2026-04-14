@@ -21,6 +21,7 @@ from search_stack.parag.parsers.base import BaseParser, ParsedDecision, ParserRe
 from search_stack.parag.parsers.bge_modern import BGEModernParser
 from search_stack.parag.parsers.cantonal_ge import CantonalGEParser
 from search_stack.parag.parsers.cantonal_generic import CantonalGenericParser
+from search_stack.parag.parsers.cantonal_zh import CantonalZHParser
 from search_stack.parag.parsers.federal import FederalParser
 
 
@@ -30,6 +31,7 @@ _REGISTRY: list[BaseParser] = [
     BGEModernParser(),
     FederalParser(),
     CantonalGEParser(),
+    CantonalZHParser(),
     CantonalGenericParser(),
 ]
 

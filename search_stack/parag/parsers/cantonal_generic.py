@@ -60,9 +60,7 @@ _HANDLED_PREFIXES: tuple[str, ...] = (
     "ge_",
     "vd_",
     "ti_",
-    "zh_sozialversicherungs",   # ZH social insurance — closer to federal style
-    "zh_verwaltungsgericht",    # ZH admin court
-    "zh_handelsgericht",        # ZH commercial court
+    "zh_",                      # all ZH courts (obergericht, sozialversicherungs, verwaltung, handels)
     "bl_",
     "gr_",
     "fr_",
@@ -89,9 +87,8 @@ _HANDLED_PREFIXES: tuple[str, ...] = (
 
 # Explicit courts NOT handled here (atypical layouts, need specific parsers).
 _EXCLUDED_COURTS: frozenset[str] = frozenset({
-    "zh_obergericht",
-    "ch_vb",
-    "bpatger",
+    "ch_vb",       # federal admin regulatory acts, not judicial
+    "bpatger",     # Federal Patent Court — specialised layout, low volume
 })
 
 

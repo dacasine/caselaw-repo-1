@@ -201,6 +201,11 @@ FEDERAL_SECTION_PATTERNS: dict[SectionType, list[str]] = {
         r"(?mi)^[ \t]*Das (?:Ober|Verwaltungs|Sozialversicherungs|Handels|Kantons|Appellations)gericht beschliesst\b",
         r"(?mi)^[ \t]*Demgem(?:ä|ae)ss erkennt\b",
         r"(?mi)^[ \t]*Demgem(?:ä|ae)ss beschliesst\b",
+        # Zurich convention — passive form
+        r"(?mi)^[ \t]*Es wird erkannt\b",
+        r"(?mi)^[ \t]*Es wird beschlossen\b",
+        r"(?mi)^[ \t]*Es wird verf(?:ü|ue)gt\b",
+        # Generic headers
         r"(?mi)^[ \t]*Dispositiv\s*:?\s*$",
         r"(?mi)^[ \t]*Dispositif\s*:?\s*$",
         # Italian cantonal
