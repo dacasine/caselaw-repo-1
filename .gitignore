@@ -28,3 +28,6 @@ web_ui/node_modules/
 *.jpeg
 .playwright-mcp/
 desktop_extension/
+
+# Claude Code local state
+.claude/
