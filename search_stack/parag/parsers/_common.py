@@ -184,6 +184,10 @@ FEDERAL_SECTION_PATTERNS: dict[SectionType, list[str]] = {
         r"(?mi)^[ \t]*Considerando\b",
         r"(?mi)^[ \t]*In diritto\b",
         r"(?mi)^[ \t]*Diritto\b",
+        # Cantonal / specialised courts: "Das Einzelgericht zieht in Erwägung",
+        # "Die Kammer zieht in Erwägung", "Das Gericht erwägt", etc.
+        r"(?mi)^[ \t]*(?:Das|Die|Der)\s+\S+\s+(?:zieht\s+in\s+Erw(?:ä|ae)gung|erw(?:ä|ae)gt)\s*:?\s*$",
+        r"(?mi)^[ \t]*Die\s+\S+kammer\s+erw(?:ä|ae)gt\s*:?\s*$",
     ],
     "dispositif": [
         # Federal (BGE / BGer / TAF / TPF)

@@ -92,11 +92,24 @@ class BaseParser(ABC):
     def minimally_acceptable(self, parsed: ParsedDecision) -> bool:
         """Heuristic: did this parser find enough structure to be trusted?
         Dispatchers use this to decide whether to try the next fallback.
-        Default: at least the considerations section was identified *and*
-        at least one considérant was extracted.
+
+        Rules (any one triggers acceptance):
+          - at least one numbered considérant was extracted, OR
+          - a considerations section was identified AND spans ≥ 500 chars
+            (prose-only body: SAC chunker will split by paragraphs).
+
+        We relaxed the original "must have ≥1 considérant" rule because
+        many cantonal decisions (old Geneva narrative style, Vaud
+        procedural orders, etc.) use prose without numbered structure.
         """
         st = parsed.stats
-        return st["has_considerations"] and st["n_considerants_total"] >= 1
+        if st["n_considerants_total"] >= 1:
+            return True
+        if st["has_considerations"]:
+            cons = next((s for s in parsed.sections if s.type == "considerations"), None)
+            if cons is not None and cons.length >= 500:
+                return True
+        return False
 
 
 class ParserRejected(Exception):
