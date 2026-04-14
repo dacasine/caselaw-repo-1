@@ -19,13 +19,13 @@ from __future__ import annotations
 from search_stack.parag.parsers._fallback import FallbackParser
 from search_stack.parag.parsers.base import BaseParser, ParsedDecision, ParserRejected
 from search_stack.parag.parsers.bge_modern import BGEModernParser
-from search_stack.parag.parsers.bger import BGerParser
+from search_stack.parag.parsers.federal import FederalParser
 
 
 # Registration order matters: source-specific parsers first, fallback last.
 _REGISTRY: list[BaseParser] = [
     BGEModernParser(),
-    BGerParser(),
+    FederalParser(),
 ]
 
 _FALLBACK: BaseParser = FallbackParser()

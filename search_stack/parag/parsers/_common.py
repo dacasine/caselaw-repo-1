@@ -38,6 +38,54 @@ def slice_sections(text: str, markers: list[Section]) -> list[Section]:
     return closed
 
 
+def synthesize_implicit_considerations(
+    text: str, sections: list[Section]
+) -> list[Section]:
+    """Some federal courts (TAF/bvger, TPF/bstger) omit the Erwägungen label
+    and jump directly from Sachverhalt to "Demnach erkennt". In that case,
+    `slice_sections` makes the facts section absorb the considérants too.
+
+    Locate the first top-level considérant marker (e.g. "1.") inside the
+    facts span and split facts there, creating an implicit considerations
+    section between the split and the dispositif.
+    """
+    types = {s.type for s in sections}
+    if "considerations" in types or "facts" not in types or "dispositif" not in types:
+        return sections
+
+    facts = next(s for s in sections if s.type == "facts")
+    disp = next(s for s in sections if s.type == "dispositif")
+
+    # Look for the first "N." on its own line within the facts region that
+    # starts at a plausible considérant (N in 1..9).
+    first_cons_re = re.compile(r"(?m)^[ \t]*([1-9])\.[ \t]*$")
+    probe = text[facts.start:disp.start]
+    m = first_cons_re.search(probe)
+    if m is None:
+        return sections
+    split_at = facts.start + m.start()
+    if split_at <= facts.start + 50:
+        # Too early — likely the "1." is in a header, not a real considérant.
+        return sections
+
+    new_facts = Section(
+        type="facts",
+        start=facts.start,
+        end=split_at,
+        marker=facts.marker,
+    )
+    synthetic = Section(
+        type="considerations",
+        start=split_at,
+        end=disp.start,
+        marker="(implicit: first numbered considérant found at split point)",
+    )
+    return sorted(
+        [s for s in sections if s.type not in ("facts",)] + [new_facts, synthetic],
+        key=lambda s: s.start,
+    )
+
+
 def is_valid_next(cur: tuple[int, ...], nxt: tuple[int, ...]) -> bool:
     """Legal next step in a numbered outline walk.
 

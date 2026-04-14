@@ -1,17 +1,23 @@
-"""Parser for Tribunal fédéral unpublished decisions ("BGer").
+"""Parser for Swiss federal courts other than BGE (Recueil Officiel).
 
-Format is very close to modern BGE — same multilingual headers, same
-section markers (Sachverhalt / Erwägungen / Demnach erkennt). The one
-divergence observed is that **sub-levels carry a trailing period**:
+Handles:
+    bger     — Tribunal fédéral, unpublished decisions (~175k)
+    bvger    — Tribunal administratif fédéral / TAF (~92k)
+    bstger   — Tribunal pénal fédéral / TPF (~11k)
+    bpatger  — Tribunal fédéral des brevets / FPC (smaller)
 
-    BGE modern:  "1.1" / "3.3.1"       (no trailing period)
-    BGer:        "1.1." / "3.3.1."     (trailing period)
+Shared conventions:
+    - multilingual headers (Bundesgericht / Tribunal fédéral / ...)
+    - "Sachverhalt:" / "Faits :" / "In fatto :" section label (usually)
+    - considérants "N." top-level + "N.M" or "N.M." sub-levels
+    - "Demnach erkennt..." / "Par ces motifs..." dispositif
 
-Top-level considérants use the same "1." form.
+Quirk of TAF and TPF: no explicit "Erwägungen" label — they jump straight
+from Sachverhalt to the numbered considérants. We synthesize the implicit
+considerations section between facts and dispositif.
 
-The dispatcher routes `court == "bger"` to this parser. If we ever see
-a BGer document that has neither "Sachverhalt" nor "Erwägungen" markers,
-the dispatcher falls back to `_fallback` as usual.
+Secondary format observed in TAF expedited decisions: a "que... / que..."
+chain with no numbered considérants. These fall back to _fallback.
 """
 
 from __future__ import annotations
@@ -24,22 +30,23 @@ from search_stack.parag.parsers._common import (
     find_section_markers,
     parse_considerants,
     slice_sections,
+    synthesize_implicit_considerations,
 )
 from search_stack.parag.parsers.base import BaseParser, ParsedDecision
 
 
-# Top-level identical to BGE modern.
+# Sub-levels: trailing period optional (BGer uses "1.1.", some TAF drops it).
 _TOP_RE = re.compile(r"(?m)^[ \t]*(\d+)\.[ \t]*$")
-# Sub-levels: trailing period optional to cover both conventions in case
-# a single document mixes them (rare but observed on long BGer arrêts).
 _SUB_RE = re.compile(r"(?m)^[ \t]*(\d+(?:\.\d+)+)\.?[ \t]*$")
 
+_HANDLED_COURTS = frozenset({"bger", "bvger", "bstger", "bpatger"})
 
-class BGerParser(BaseParser):
-    name = "bger"
+
+class FederalParser(BaseParser):
+    name = "federal"
 
     def handles(self, court: str) -> bool:
-        return court == "bger"
+        return court in _HANDLED_COURTS
 
     def parse(self, decision_id: str, language: str, full_text: str) -> ParsedDecision:
         if not full_text:
@@ -54,6 +61,7 @@ class BGerParser(BaseParser):
 
         markers = find_section_markers(full_text, FEDERAL_SECTION_PATTERNS)
         sections = slice_sections(full_text, markers)
+        sections = synthesize_implicit_considerations(full_text, sections)
 
         cons_section = next((s for s in sections if s.type == "considerations"), None)
         considerants = (
