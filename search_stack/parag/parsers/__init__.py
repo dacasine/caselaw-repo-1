@@ -19,6 +19,7 @@ from __future__ import annotations
 from search_stack.parag.parsers._fallback import FallbackParser
 from search_stack.parag.parsers.base import BaseParser, ParsedDecision, ParserRejected
 from search_stack.parag.parsers.bge_modern import BGEModernParser
+from search_stack.parag.parsers.cantonal_generic import CantonalGenericParser
 from search_stack.parag.parsers.federal import FederalParser
 
 
@@ -26,6 +27,7 @@ from search_stack.parag.parsers.federal import FederalParser
 _REGISTRY: list[BaseParser] = [
     BGEModernParser(),
     FederalParser(),
+    CantonalGenericParser(),
 ]
 
 _FALLBACK: BaseParser = FallbackParser()
