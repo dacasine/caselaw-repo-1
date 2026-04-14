@@ -19,14 +19,17 @@ from __future__ import annotations
 from search_stack.parag.parsers._fallback import FallbackParser
 from search_stack.parag.parsers.base import BaseParser, ParsedDecision, ParserRejected
 from search_stack.parag.parsers.bge_modern import BGEModernParser
+from search_stack.parag.parsers.cantonal_ge import CantonalGEParser
 from search_stack.parag.parsers.cantonal_generic import CantonalGenericParser
 from search_stack.parag.parsers.federal import FederalParser
 
 
 # Registration order matters: source-specific parsers first, fallback last.
+# Specific cantonal parsers must come before the generic cantonal fallback.
 _REGISTRY: list[BaseParser] = [
     BGEModernParser(),
     FederalParser(),
+    CantonalGEParser(),
     CantonalGenericParser(),
 ]
 
