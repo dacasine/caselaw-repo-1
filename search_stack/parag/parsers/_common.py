@@ -38,6 +38,48 @@ def slice_sections(text: str, markers: list[Section]) -> list[Section]:
     return closed
 
 
+def synthesize_marker_less_considerations(
+    text: str, sections: list[Section]
+) -> list[Section]:
+    """For documents with no structural section markers at all — common in
+    small cantonal tribunals (Neuchâtel, Graubünden, some Basel) whose
+    decisions open directly with "A.", "B.", "C." narrative then numbered
+    reasoning — detect a plausible start-of-body position and treat the
+    rest as a single considerations section.
+
+    Heuristic: find the *first* plain top-level considérant ("^1\\.$" on
+    its own line) after the first 400 chars (header skip). If found,
+    create a considerations section from that point to EOF.
+    Returns the original sections list unchanged if sections are already
+    present or the heuristic fails.
+    """
+    if sections:
+        return sections
+
+    # Skip the first 400 chars (header, parties, composition block).
+    header_skip = 400
+    if len(text) < header_skip + 500:
+        return sections
+
+    first_cons_re = re.compile(r"(?m)^[ \t]*1\.[ \t]*$")
+    m = first_cons_re.search(text, pos=header_skip)
+    if m is None:
+        # Also accept inline form "1. Content..." provided content is at
+        # least 30 chars (avoid dates / short stubs).
+        inline_re = re.compile(r"(?m)^[ \t]*1\.[ \t]+[A-ZÄÖÜÉÈÀÂÎÔÛÇ].{30,}")
+        m = inline_re.search(text, pos=header_skip)
+        if m is None:
+            return sections
+
+    synthetic = Section(
+        type="considerations",
+        start=m.start(),
+        end=len(text),
+        marker="(marker-less: inferred from first numbered considérant)",
+    )
+    return [synthetic]
+
+
 def synthesize_implicit_considerations(
     text: str, sections: list[Section]
 ) -> list[Section]:
@@ -186,8 +228,17 @@ FEDERAL_SECTION_PATTERNS: dict[SectionType, list[str]] = {
         r"(?mi)^[ \t]*Diritto\b",
         # Cantonal / specialised courts: "Das Einzelgericht zieht in Erwägung",
         # "Die Kammer zieht in Erwägung", "Das Gericht erwägt", etc.
+        # Word order 1 (subject–verb): "Die Kammer zieht in Erwägung:"
         r"(?mi)^[ \t]*(?:Das|Die|Der)\s+\S+\s+(?:zieht\s+in\s+Erw(?:ä|ae)gung|erw(?:ä|ae)gt)\s*:?\s*$",
         r"(?mi)^[ \t]*Die\s+\S+kammer\s+erw(?:ä|ae)gt\s*:?\s*$",
+        # Word order 2 (German inversion, Soleure/Aargau): "zieht die
+        # Beschwerdekammer des Obergerichts in Erwägung :".
+        # Uses \s+ which matches newlines — these phrases are frequently
+        # line-wrapped in the scraped text.
+        r"(?i)(?<!\S)zieht\s+(?:das|die|der)\s+\S+(?:\s+\S+){0,6}\s+in\s+Erw(?:ä|ae)gung\s*:?",
+        # Very generic fallback: any line containing just "in Erwägung:"
+        # preceded by a newline (typical after line-wrapped subjects).
+        r"(?mi)^[ \t]*in\s+Erw(?:ä|ae)gung\s*:?\s*$",
     ],
     "dispositif": [
         # Federal (BGE / BGer / TAF / TPF)

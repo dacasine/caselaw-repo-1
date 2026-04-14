@@ -45,6 +45,7 @@ from search_stack.parag.parsers._common import (
     parse_considerants,
     slice_sections,
     synthesize_implicit_considerations,
+    synthesize_marker_less_considerations,
 )
 from search_stack.parag.parsers.base import BaseParser, ParsedDecision
 
@@ -114,6 +115,9 @@ class CantonalGenericParser(BaseParser):
         markers = find_section_markers(full_text, FEDERAL_SECTION_PATTERNS)
         sections = slice_sections(full_text, markers)
         sections = synthesize_implicit_considerations(full_text, sections)
+        # Last-resort: marker-less documents (ne_*, gr_*, some bl_*) jump
+        # straight into numbered content with no explicit section header.
+        sections = synthesize_marker_less_considerations(full_text, sections)
 
         cons_section = next((s for s in sections if s.type == "considerations"), None)
         considerants = (
