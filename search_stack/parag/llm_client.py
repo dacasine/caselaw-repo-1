@@ -197,8 +197,33 @@ class SyntheticClient:
             },
         )
         t0 = time.monotonic()
-        with urllib.request.urlopen(req, timeout=self.timeout_s) as resp:
-            raw = resp.read()
+        # 429 / 5xx aware retry with exponential backoff.
+        # We respect Retry-After when present, otherwise back off
+        # 30s, 60s, 120s. After 4 tries we surface the error so the
+        # caller can mark the decision and move on.
+        backoffs = [30, 60, 120]
+        attempt = 0
+        while True:
+            try:
+                with urllib.request.urlopen(req, timeout=self.timeout_s) as resp:
+                    raw = resp.read()
+                break
+            except urllib.error.HTTPError as e:
+                transient = e.code == 429 or 500 <= e.code < 600
+                if not transient or attempt >= len(backoffs):
+                    raise
+                retry_after = e.headers.get("Retry-After") if e.headers else None
+                wait = int(retry_after) if (retry_after and retry_after.isdigit()) else backoffs[attempt]
+                time.sleep(wait)
+                attempt += 1
+                # We have to rebuild the request because HTTPError consumes it.
+                req = urllib.request.Request(
+                    url, data=body, method="POST",
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                    },
+                )
         dt = time.monotonic() - t0
         data = json.loads(raw.decode("utf-8"))
 
