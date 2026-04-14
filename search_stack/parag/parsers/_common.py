@@ -271,3 +271,53 @@ FEDERAL_SECTION_PATTERNS: dict[SectionType, list[str]] = {
 
 #: Letter sub-items — same convention on every federal source.
 LETTERED_SUB_RE = re.compile(r"(?m)^[ \t]*([a-z])\s*\)\s+")
+
+
+# ---------------------------------------------------------------------------
+# Text cleanup utilities
+# ---------------------------------------------------------------------------
+#
+# Parsers return start/end pointers into the original full_text so we can
+# always recover provenance (span-level citation). When the SAC chunker
+# extracts the text for embedding or display, it should call clean_chunk_text
+# to remove typographic noise that would degrade embedding quality or break
+# downstream token matching:
+#
+#   - \xa0 non-breaking spaces (very common in FR/IT legal refs)
+#   - hyphen + newline word breaks ("Vor-\ninstanz" → "Vorinstanz")
+#   - embedded page-number lines ("- 2 -", "- 2/18 -")
+#   - excessive whitespace runs
+#
+# Cleanup is *non-destructive* in the sense that we do not change semantic
+# content — just normalize whitespace and rejoin broken words.
+
+_NBSP_RE = re.compile(r"\xa0")
+_HYPHEN_LINEBREAK_RE = re.compile(r"(\w)-\n(\w)")
+_PAGE_NUMBER_LINE_RE = re.compile(r"(?m)^[ \t]*-\s*\d+(?:\s*/\s*\d+)?\s*-[ \t]*$")
+_MULTI_NEWLINE_RE = re.compile(r"\n{3,}")
+_MULTI_SPACE_RE = re.compile(r"[ \t]{2,}")
+_TRAILING_WS_RE = re.compile(r"[ \t]+$", re.MULTILINE)
+
+
+def clean_chunk_text(text: str) -> str:
+    """Normalize typographic noise without changing semantic content.
+
+    Applied by the SAC chunker before embedding / display, never to the
+    raw spans returned by parsers (we want spans to point to the original
+    full_text for provenance and citation).
+    """
+    if not text:
+        return text
+    # 1. Rejoin words split by a hyphen at end of line.
+    text = _HYPHEN_LINEBREAK_RE.sub(r"\1\2", text)
+    # 2. Normalise non-breaking spaces to regular spaces.
+    text = _NBSP_RE.sub(" ", text)
+    # 3. Strip page-number marker lines.
+    text = _PAGE_NUMBER_LINE_RE.sub("", text)
+    # 4. Collapse 3+ consecutive newlines to a paragraph break (max 2).
+    text = _MULTI_NEWLINE_RE.sub("\n\n", text)
+    # 5. Collapse runs of 2+ spaces/tabs to a single space.
+    text = _MULTI_SPACE_RE.sub(" ", text)
+    # 6. Trim trailing whitespace on every line + overall ends.
+    text = _TRAILING_WS_RE.sub("", text)
+    return text.strip()
