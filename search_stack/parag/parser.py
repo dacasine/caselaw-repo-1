@@ -44,14 +44,14 @@ _SECTION_PATTERNS: dict[SectionType, list[str]] = {
     ],
 }
 
-# Matches considérant markers at line start in two common formats:
-#   "3."       (content on next line)                   → trailing period required
-#   "14.1"     (content on next line, no trailing dot)  → no period after sub
-#   "3. Die..."(content inline)                         → period + whitespace
-# We allow optional trailing period, then require either EOL or whitespace-then-content.
-_CONSIDERANT_RE = re.compile(
-    r"(?m)^[ \t]*(\d+(?:\.\d+)*)\.?(?=[ \t]*$|[ \t]+\S)"
-)
+# Modern BGE convention: considérants are ALWAYS on their own line.
+# Top-level: "1." (digit + period, end of line).
+# Sub-level: "1.1", "3.3.1" (multi-part number, no trailing period, end of line).
+# This strict form rejects common false positives from quoted statute text:
+#   "1" / "2" / "3" alone on a line    (statute paragraphs, no period)
+#   "2. im Dienste der..."              (statute sub-items, inline content)
+_CONSIDERANT_TOP_RE = re.compile(r"(?m)^[ \t]*(\d+)\.[ \t]*$")
+_CONSIDERANT_SUB_RE = re.compile(r"(?m)^[ \t]*(\d+(?:\.\d+)+)[ \t]*$")
 _LETTERED_SUB_RE = re.compile(r"(?m)^[ \t]*([a-z])\s*\)\s+")
 
 
@@ -92,7 +92,13 @@ class ParsedDecision:
     @property
     def stats(self) -> dict:
         found = {s.type for s in self.sections}
-        total_considerant_chars = sum(c.length for c in self.considerants if c.depth == 1)
+        # Considérants tile the considerations section contiguously by
+        # construction (each ends at the next one's start). Total coverage
+        # is therefore from first.start to last.end.
+        if self.considerants:
+            cons_span = self.considerants[-1].end - self.considerants[0].start
+        else:
+            cons_span = 0
         return {
             "has_facts": "facts" in found,
             "has_considerations": "considerations" in found,
@@ -102,7 +108,7 @@ class ParsedDecision:
             "n_considerants_total": len(self.considerants),
             "max_depth": max((c.depth for c in self.considerants), default=0),
             "considerant_coverage_ratio": (
-                total_considerant_chars / self.text_length if self.text_length else 0.0
+                cons_span / self.text_length if self.text_length else 0.0
             ),
         }
 
@@ -136,25 +142,83 @@ def _slice_sections(text: str, markers: list[Section]) -> list[Section]:
     return closed
 
 
+def _is_valid_next(cur: tuple[int, ...], nxt: tuple[int, ...]) -> bool:
+    """True if `nxt` is a legal next step in a numbered outline starting at `cur`.
+
+    Three legal moves:
+      (a) deeper:    cur is a prefix of nxt, and the new tail digits are all 1
+                     e.g. (3,) → (3, 1) or (3, 1, 1)
+      (b) sibling:   same depth, same parent, value increments by 1
+                     e.g. (3, 1) → (3, 2)
+      (c) shallower: truncate cur to nxt's depth, same parent, value +1
+                     e.g. (3, 3, 1) → (3, 4) or (3, 3, 1) → (4,)
+    """
+    if len(nxt) > len(cur):
+        return nxt[: len(cur)] == cur and all(v == 1 for v in nxt[len(cur):])
+    if len(nxt) == len(cur):
+        return nxt[:-1] == cur[:-1] and nxt[-1] == cur[-1] + 1
+    # shallower
+    return nxt[:-1] == cur[: len(nxt) - 1] and nxt[-1] == cur[len(nxt) - 1] + 1
+
+
+def _filter_monotonic(candidates: list[Considerant]) -> list[Considerant]:
+    """Keep only candidates that form a valid monotonic outline walk.
+
+    This filters out paragraph/sub-item numbers of statutes quoted inside a
+    considérant (e.g. `Art. 1a AHVG` quoted in extenso with its paragraphs
+    "1", "2", "3" and items "1.", "2.", "3.").
+    """
+    accepted: list[Considerant] = []
+    cursor: tuple[int, ...] | None = None
+
+    for c in candidates:
+        try:
+            parts = tuple(int(p) for p in c.number.split("."))
+        except ValueError:
+            continue
+        # sanity bound: real considérants rarely exceed 30 in any component
+        if any(p > 50 for p in parts):
+            continue
+
+        if cursor is None:
+            # first accepted candidate — BGE excerpts can start at high numbers
+            # (e.g. "Aus den Erwägungen: 14.") so we just accept it as anchor.
+            accepted.append(c)
+            cursor = parts
+            continue
+
+        if _is_valid_next(cursor, parts):
+            accepted.append(c)
+            cursor = parts
+
+    return accepted
+
+
 def _parse_considerants(text: str, section_start: int, section_end: int) -> list[Considerant]:
     """Find numbered considérants within a [section_start, section_end) window."""
     window = text[section_start:section_end]
-    raw = list(_CONSIDERANT_RE.finditer(window))
-    if not raw:
+    raw_matches = sorted(
+        list(_CONSIDERANT_TOP_RE.finditer(window))
+        + list(_CONSIDERANT_SUB_RE.finditer(window)),
+        key=lambda m: m.start(),
+    )
+    if not raw_matches:
         return []
 
-    # absolute offsets + close end at next match (or section end)
-    out: list[Considerant] = []
-    for i, m in enumerate(raw):
+    # Build raw candidates with absolute offsets; close each at the next match.
+    raw_candidates: list[Considerant] = []
+    for i, m in enumerate(raw_matches):
         number = m.group(1)
         start_abs = section_start + m.start()
-        end_abs = section_start + raw[i + 1].start() if i + 1 < len(raw) else section_end
+        end_abs = (
+            section_start + raw_matches[i + 1].start()
+            if i + 1 < len(raw_matches)
+            else section_end
+        )
         depth = number.count(".") + 1
-
         sub_window = text[start_abs:end_abs]
         lettered = [mm.group(1) for mm in _LETTERED_SUB_RE.finditer(sub_window)]
-
-        out.append(
+        raw_candidates.append(
             Considerant(
                 number=number,
                 start=start_abs,
@@ -163,7 +227,15 @@ def _parse_considerants(text: str, section_start: int, section_end: int) -> list
                 lettered_subs=lettered,
             )
         )
-    return out
+
+    # Filter to a coherent outline walk.
+    filtered = _filter_monotonic(raw_candidates)
+
+    # Re-close end offsets after filtering so each considérant spans up to the
+    # next *accepted* considérant (the raw end may stop at a rejected candidate).
+    for i, c in enumerate(filtered):
+        c.end = filtered[i + 1].start if i + 1 < len(filtered) else section_end
+    return filtered
 
 
 def parse(decision_id: str, language: str, full_text: str) -> ParsedDecision:
