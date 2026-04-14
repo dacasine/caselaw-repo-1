@@ -1,13 +1,17 @@
-"""Parser for modern BGE / ATF decisions (post-1960 convention).
+"""Parser for Tribunal fédéral unpublished decisions ("BGer").
 
-Format hallmarks:
-    - multilingual header repeated up to three times (DE/FR/IT)
-    - "Sachverhalt" / "En fait" / "In fatto" section label
-    - "Erwägungen" / "Considérant en droit" / "In diritto" section label
-    - top-level considérants "N." on their own line
-    - sub-levels "N.M", "N.M.P" on their own line (no trailing period)
+Format is very close to modern BGE — same multilingual headers, same
+section markers (Sachverhalt / Erwägungen / Demnach erkennt). The one
+divergence observed is that **sub-levels carry a trailing period**:
 
-Out of scope: pre-1960 BGE (no structural labels, use bge_legacy).
+    BGE modern:  "1.1" / "3.3.1"       (no trailing period)
+    BGer:        "1.1." / "3.3.1."     (trailing period)
+
+Top-level considérants use the same "1." form.
+
+The dispatcher routes `court == "bger"` to this parser. If we ever see
+a BGer document that has neither "Sachverhalt" nor "Erwägungen" markers,
+the dispatcher falls back to `_fallback` as usual.
 """
 
 from __future__ import annotations
@@ -24,16 +28,18 @@ from search_stack.parag.parsers._common import (
 from search_stack.parag.parsers.base import BaseParser, ParsedDecision
 
 
-# BGE modern convention: "1." top-level, "1.1" / "3.3.1" sub-levels (no trailing period).
+# Top-level identical to BGE modern.
 _TOP_RE = re.compile(r"(?m)^[ \t]*(\d+)\.[ \t]*$")
-_SUB_RE = re.compile(r"(?m)^[ \t]*(\d+(?:\.\d+)+)[ \t]*$")
+# Sub-levels: trailing period optional to cover both conventions in case
+# a single document mixes them (rare but observed on long BGer arrêts).
+_SUB_RE = re.compile(r"(?m)^[ \t]*(\d+(?:\.\d+)+)\.?[ \t]*$")
 
 
-class BGEModernParser(BaseParser):
-    name = "bge_modern"
+class BGerParser(BaseParser):
+    name = "bger"
 
     def handles(self, court: str) -> bool:
-        return court == "bge"
+        return court == "bger"
 
     def parse(self, decision_id: str, language: str, full_text: str) -> ParsedDecision:
         if not full_text:
