@@ -64,8 +64,10 @@ def synthesize_implicit_considerations(
     if m is None:
         return sections
     split_at = facts.start + m.start()
-    if split_at <= facts.start + 50:
-        # Too early — likely the "1." is in a header, not a real considérant.
+    # Guard: the "1." must be past the marker itself. Marker words are at
+    # most ~15 chars ("Sachverhalt:\n" = 12). 5 rejects only impossible
+    # matches that collide with the marker start.
+    if split_at <= facts.start + 5:
         return sections
 
     new_facts = Section(
@@ -184,6 +186,7 @@ FEDERAL_SECTION_PATTERNS: dict[SectionType, list[str]] = {
         r"(?mi)^[ \t]*Diritto\b",
     ],
     "dispositif": [
+        # Federal (BGE / BGer / TAF / TPF)
         r"(?mi)^[ \t]*Demnach erkennt\b",
         r"(?mi)^[ \t]*Demnach beschliesst\b",
         r"(?mi)^[ \t]*Par ces motifs\b",
@@ -191,6 +194,18 @@ FEDERAL_SECTION_PATTERNS: dict[SectionType, list[str]] = {
         r"(?mi)^[ \t]*Il Tribunale federale pronuncia\b",
         r"(?mi)^[ \t]*Das Bundesgericht erkennt\b",
         r"(?mi)^[ \t]*Le Tribunal f(?:é|e)d(?:é|e)ral prononce\b",
+        # Cantonal — generic court verdict openers
+        r"(?mi)^[ \t]*Das Gericht erkennt\b",
+        r"(?mi)^[ \t]*Das Gericht beschliesst\b",
+        r"(?mi)^[ \t]*Das (?:Ober|Verwaltungs|Sozialversicherungs|Handels|Kantons|Appellations|Steuerrekurs)gericht erkennt\b",
+        r"(?mi)^[ \t]*Das (?:Ober|Verwaltungs|Sozialversicherungs|Handels|Kantons|Appellations)gericht beschliesst\b",
+        r"(?mi)^[ \t]*Demgem(?:ä|ae)ss erkennt\b",
+        r"(?mi)^[ \t]*Demgem(?:ä|ae)ss beschliesst\b",
+        r"(?mi)^[ \t]*Dispositiv\s*:?\s*$",
+        r"(?mi)^[ \t]*Dispositif\s*:?\s*$",
+        # Italian cantonal
+        r"(?mi)^[ \t]*Il (?:Tribunale|Giudice|Pretore) (?:cantonale|di|amministrativo|delle assicurazioni)",
+        r"(?mi)^[ \t]*(?:Il|La) (?:Pretore|Corte) (?:pronuncia|decide|statuisce)\b",
     ],
 }
 
