@@ -188,13 +188,15 @@ def run_many(
                 elapsed = time.monotonic() - t_start
                 rate = done / elapsed if elapsed > 0 else 0
                 eta = (len(rows) - done) / rate if rate > 0 else 0
+                quota_str = client.quota.describe() if client.quota else ""
                 print(
                     f"  [{done}/{len(rows)}] "
                     f"ok={agg['ok']} skip={agg['skipped']} "
                     f"err={agg['error']} empty={agg['empty']} "
                     f"| llm={agg['llm_calls']} "
                     f"summ={agg['chunks_summarized']} "
-                    f"| rate={rate*60:.1f}/min eta={eta/60:.1f}min",
+                    f"| rate={rate*60:.1f}/min eta={eta/60:.1f}min "
+                    f"| {quota_str}",
                     file=sys.stderr,
                     flush=True,
                 )
