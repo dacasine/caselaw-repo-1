@@ -37,8 +37,12 @@ from search_stack.parag.parsers.base import Considerant, ParsedDecision
 STUB_MAX_CHARS = 100
 SELF_SUFFICIENT_MIN_CHARS = 500
 SELF_SUFFICIENT_MIN_SENTENCES = 2
-SAC_BATCH_SIZE = 5
-LLM_MAX_TOKENS_PER_BATCH = 2500      # Kimi is usually ~200 tokens/summary
+# Batch doubled from 5 → 10 after model-benchmark validation: Kimi-K2-Instruct
+# uses ~250 tokens for 5 summaries, so a batch of 10 fits comfortably under
+# LLM_MAX_TOKENS_PER_BATCH. Non-reasoning models have stable sub-10s latency
+# so we can amortise more chunks per call.
+SAC_BATCH_SIZE = 10
+LLM_MAX_TOKENS_PER_BATCH = 4000      # headroom for 10 summaries × ~300 tokens
 SUMMARY_MAX_CHARS = 320              # truncate if the model rambles
 
 
