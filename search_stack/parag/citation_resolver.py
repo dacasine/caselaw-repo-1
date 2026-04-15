@@ -37,6 +37,21 @@ from search_stack.reference_extraction import (
     extract_statute_references,
 )
 
+# Map our stored decision_id (e.g. "bge_BGE_145_III_345" or "bger_6B_123_2019")
+# to the canonical citation form that extract_case_citations would produce.
+_BGE_ID_RE = re.compile(r"bge_BGE_(\d+)_([IVX]+)_(\d+)", re.IGNORECASE)
+_BGER_ID_RE = re.compile(r"bger_([0-9A-Z]+_[0-9]+_[0-9]+)", re.IGNORECASE)
+
+
+def _decision_id_to_canonical(decision_id: str) -> str | None:
+    m = _BGE_ID_RE.fullmatch(decision_id)
+    if m:
+        return f"BGE {m.group(1)} {m.group(2).upper()} {m.group(3)}"
+    m = _BGER_ID_RE.fullmatch(decision_id)
+    if m:
+        return m.group(1)
+    return None
+
 
 # ---------------------------------------------------------------------------
 # Output dataclasses
@@ -357,8 +372,14 @@ class CitationResolver:
         chunk_text: str,
         llm_legal_basis: list[str] | None = None,
         llm_prior_cases: list[dict] | None = None,
+        self_decision_id: str | None = None,
     ) -> tuple[list[LawCitation], list[CaseCitationRow]]:
-        """Extract + merge + resolve all citations for one chunk."""
+        """Extract + merge + resolve all citations for one chunk.
+
+        `self_decision_id`: the decision being processed. Case citations
+        pointing at this same decision (self-references in the text) are
+        dropped — they carry no information for the citation graph.
+        """
         llm_laws: list[LawCitation] = []
         for s in llm_legal_basis or []:
             if not s:
@@ -387,7 +408,55 @@ class CitationResolver:
         for c in laws:
             self._resolve_one(c)
 
+        # Post-processing: drop self-references and collapse multilingual
+        # aliases to a single row per canonical target.
+        cases = self._drop_self_references(cases, self_decision_id)
+        laws = self._dedup_law_aliases(laws)
+
         return laws, cases
+
+    @staticmethod
+    def _drop_self_references(
+        cases: list[CaseCitationRow], self_decision_id: str | None
+    ) -> list[CaseCitationRow]:
+        if not self_decision_id:
+            return cases
+        # Normalise the self ID the same way extract_case_citations would.
+        # Our decision_id format is "bge_BGE_145_III_345" → try to extract
+        # the canonical BGE form "BGE 145 III 345".
+        normalised_self = _decision_id_to_canonical(self_decision_id)
+        out: list[CaseCitationRow] = []
+        for c in cases:
+            if c.target_decision_id == normalised_self:
+                continue
+            # Also drop raw-only references where docket normalisation
+            # produced the same volume/page triple (e.g. "145 III 345").
+            if normalised_self and c.target_decision_id.endswith(
+                normalised_self.replace("BGE ", "")
+            ) and c.citation_type == "docket":
+                continue
+            out.append(c)
+        return out
+
+    @staticmethod
+    def _dedup_law_aliases(laws: list[LawCitation]) -> list[LawCitation]:
+        """Collapse rows that resolve to the same (sr_number, article_num,
+        paragraph, letter). Keeps the first occurrence; upgrades its
+        source to 'both' if multiple sources contributed."""
+        seen: dict[tuple, LawCitation] = {}
+        for c in laws:
+            if not c.sr_number:
+                # unresolved → keep under its own raw key (no collision risk)
+                key = ("_unresolved", c.law_abbr, c.article_num, c.paragraph, c.letter)
+            else:
+                key = (c.sr_number, c.article_num, c.paragraph, c.letter)
+            if key in seen:
+                existing = seen[key]
+                if existing.source != c.source:
+                    existing.source = "both"
+            else:
+                seen[key] = c
+        return list(seen.values())
 
     # ---- persistence ---------------------------------------------------
 

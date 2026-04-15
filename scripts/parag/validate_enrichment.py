@@ -184,6 +184,7 @@ def main() -> None:
             chunk_text=d["full_text"],
             llm_legal_basis=llm_basis,
             llm_prior_cases=trs,
+            self_decision_id=d["decision_id"],
         )
         resolved_n = sum(1 for c in laws if c.resolved)
         print(f"\n  citations: {len(laws)} laws ({resolved_n} resolved), {len(cases)} cases")
