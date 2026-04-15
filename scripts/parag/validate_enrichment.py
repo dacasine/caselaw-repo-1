@@ -101,7 +101,8 @@ def main() -> None:
     client = SyntheticClient(rate_limit_per_minute=10)
     system = SYSTEM_PROMPT_LIGHT if args.light else SYSTEM_PROMPT_FULL
     resolver = CitationResolver(
-        statutes_db_path=Path.home() / ".swiss-caselaw" / "statutes.db"
+        statutes_db_path=Path.home() / ".swiss-caselaw" / "statutes.db",
+        cantonal_db_path=Path.home() / ".swiss-caselaw" / "cantonal_laws.db",
     )
 
     for i, d in enumerate(decs, 1):

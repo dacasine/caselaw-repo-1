@@ -174,48 +174,72 @@ def _merge_case(llm: list[CaseCitationRow],
 # ---------------------------------------------------------------------------
 
 class CitationResolver:
-    """Orchestrates extraction + merge + optional statutes.db resolution.
+    """Orchestrates extraction + merge + resolution against BOTH statutes
+    databases when present.
 
-    If `statutes_db_path` points at a file that doesn't exist, the
-    resolver still canonicalises but leaves `resolved=False` and
-    `sr_number=None`. This lets us run the pipeline before statutes.db
-    is built, and back-fill resolutions later.
+    Federal laws live in `statutes.db` (Fedlex), cantonal laws in
+    `cantonal_laws.db` (direct portals + LexFind union). A given
+    abbreviation is first matched against federal, then cantonal
+    (federal codes like "CC" / "ZGB" win over possible cantonal
+    collisions).
+
+    Any DB absent → resolver degrades gracefully: canonicalises and
+    leaves `resolved=False`, `sr_number=None`. Re-running later
+    back-fills the resolution.
     """
 
-    def __init__(self, statutes_db_path: Path | None = None) -> None:
-        self._db_path = statutes_db_path
-        self._db: sqlite3.Connection | None = None
-        self._abbr_to_sr: dict[str, str] | None = None
+    def __init__(
+        self,
+        statutes_db_path: Path | None = None,
+        cantonal_db_path: Path | None = None,
+    ) -> None:
+        self._fed_path = statutes_db_path
+        self._cant_path = cantonal_db_path
+        self._fed_db: sqlite3.Connection | None = None
+        self._cant_db: sqlite3.Connection | None = None
+        self._fed_abbr: dict[str, str] | None = None
+        self._cant_abbr: dict[str, tuple[str, str, str]] | None = None  # abbr → (sr, canton, lexfind_id)
 
-    def _open_db(self) -> sqlite3.Connection | None:
-        if self._db is not None:
-            return self._db
-        if not self._db_path or not self._db_path.exists():
+    # ---- low-level DB helpers -----------------------------------------
+
+    @staticmethod
+    def _open_ro(path: Path | None, required_table: str) -> sqlite3.Connection | None:
+        if not path or not path.exists():
             return None
         try:
-            # read-only URI so we never create a 0-byte file if path is odd
-            uri = f"file:{self._db_path}?mode=ro"
+            uri = f"file:{path}?mode=ro"
             conn = sqlite3.connect(uri, uri=True)
             conn.row_factory = sqlite3.Row
-            # Sanity check: the expected schema must be present.
             row = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='laws'"
+                "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                (required_table,),
             ).fetchone()
             if row is None:
                 conn.close()
                 return None
-            self._db = conn
-            return self._db
+            return conn
         except sqlite3.Error:
             return None
 
-    def _load_abbr_index(self) -> dict[str, str]:
-        if self._abbr_to_sr is not None:
-            return self._abbr_to_sr
-        db = self._open_db()
+    def _open_fed(self) -> sqlite3.Connection | None:
+        if self._fed_db is None:
+            self._fed_db = self._open_ro(self._fed_path, "laws")
+        return self._fed_db
+
+    def _open_cant(self) -> sqlite3.Connection | None:
+        if self._cant_db is None:
+            self._cant_db = self._open_ro(self._cant_path, "laws")
+        return self._cant_db
+
+    # ---- abbreviation indices -----------------------------------------
+
+    def _load_fed_abbr(self) -> dict[str, str]:
+        if self._fed_abbr is not None:
+            return self._fed_abbr
+        db = self._open_fed()
         if db is None:
-            self._abbr_to_sr = {}
-            return self._abbr_to_sr
+            self._fed_abbr = {}
+            return self._fed_abbr
         idx: dict[str, str] = {}
         try:
             for row in db.execute(
@@ -227,34 +251,103 @@ class CitationResolver:
                         idx[abbr.strip().upper()] = sr
         except sqlite3.OperationalError:
             pass
-        self._abbr_to_sr = idx
+        self._fed_abbr = idx
         return idx
 
-    def _article_exists(self, sr_number: str, article_num: str) -> bool:
-        db = self._open_db()
+    def _load_cant_abbr(self) -> dict[str, tuple[str, str, str]]:
+        """Cantonal DB has no dedicated abbreviation column, but titles
+        usually contain the abbreviation in parentheses:
+            "Loi sur la procédure administrative (LPA-VD; RSV 173.36)"
+        We mine that pattern once and build the index.
+        """
+        if self._cant_abbr is not None:
+            return self._cant_abbr
+        db = self._open_cant()
+        if db is None:
+            self._cant_abbr = {}
+            return self._cant_abbr
+        idx: dict[str, tuple[str, str, str]] = {}
+        try:
+            rows = db.execute(
+                "SELECT lexfind_id, canton, sr_number, title FROM laws"
+            ).fetchall()
+        except sqlite3.OperationalError:
+            self._cant_abbr = {}
+            return self._cant_abbr
+
+        # Match an abbreviation in parentheses that looks like a legal
+        # code (uppercase letters, optional digits, optional canton
+        # suffix after a dash).
+        abbr_pat = re.compile(
+            r"\(([A-ZÄÖÜa-z0-9]{2,}(?:-[A-Z]{1,3})?)"
+            r"(?:\s*[;,]|\s+RS[A-Z]?\s)",
+        )
+        for row in rows:
+            title = row["title"] or ""
+            m = abbr_pat.search(title)
+            if not m:
+                continue
+            abbr = m.group(1).strip().upper()
+            if len(abbr) < 2:
+                continue
+            # first seen wins (cantonal SR numbers repeat across languages)
+            idx.setdefault(
+                abbr,
+                (row["sr_number"] or "", row["canton"], str(row["lexfind_id"])),
+            )
+        self._cant_abbr = idx
+        return idx
+
+    # ---- article existence --------------------------------------------
+
+    def _fed_article_exists(self, sr_number: str, article_num: str) -> bool:
+        db = self._open_fed()
         if db is None:
             return False
         try:
             row = db.execute(
-                "SELECT 1 FROM articles WHERE sr_number = ? AND article_num = ? LIMIT 1",
+                "SELECT 1 FROM articles WHERE sr_number=? AND article_num=? LIMIT 1",
                 (sr_number, article_num),
             ).fetchone()
             return row is not None
         except sqlite3.OperationalError:
             return False
 
+    def _cant_article_exists(self, lexfind_id: str, article_num: str) -> bool:
+        db = self._open_cant()
+        if db is None:
+            return False
+        try:
+            row = db.execute(
+                "SELECT 1 FROM articles WHERE lexfind_id=? AND article_num=? LIMIT 1",
+                (lexfind_id, article_num),
+            ).fetchone()
+            return row is not None
+        except sqlite3.OperationalError:
+            return False
+
+    # ---- resolve one citation -----------------------------------------
+
     def _resolve_one(self, cit: LawCitation) -> None:
-        """Populate sr_number + resolved=True when possible."""
-        idx = self._load_abbr_index()
-        sr = idx.get(cit.law_abbr.upper())
-        if not sr:
+        """Try federal index first, then cantonal. Populates sr_number
+        + resolved=True when a matching article is found."""
+        abbr_up = cit.law_abbr.upper()
+
+        sr = self._load_fed_abbr().get(abbr_up)
+        if sr:
+            cit.sr_number = sr
+            cit.resolved = bool(
+                cit.article_num and self._fed_article_exists(sr, cit.article_num)
+            )
             return
-        cit.sr_number = sr
-        if cit.article_num and self._article_exists(sr, cit.article_num):
-            cit.resolved = True
-        else:
-            # SR known but article not found — keep sr_number, mark unresolved
-            cit.resolved = False
+
+        cant_entry = self._load_cant_abbr().get(abbr_up)
+        if cant_entry:
+            cant_sr, canton, lexfind_id = cant_entry
+            cit.sr_number = f"{canton}:{cant_sr}" if cant_sr else f"{canton}:lf{lexfind_id}"
+            cit.resolved = bool(
+                cit.article_num and self._cant_article_exists(lexfind_id, cit.article_num)
+            )
 
     # ---- public API ----------------------------------------------------
 
