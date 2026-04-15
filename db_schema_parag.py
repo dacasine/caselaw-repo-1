@@ -17,6 +17,13 @@ DEFAULT_PARAG_DB = Path.home() / ".swiss-caselaw" / "parag_chunks.db"
 #: `prompt_version` recorded per-decision and re-runs if current > stored.
 PROMPT_VERSION = 1
 
+#: Embedding model + version. Bump EMBEDDING_VERSION if we change the model
+#: or its preprocessing (e.g. summary-prepend strategy). Existing vectors
+#: with a smaller version will be re-encoded by the embed worker.
+EMBEDDING_MODEL = "BAAI/bge-m3"
+EMBEDDING_DIM = 1024
+EMBEDDING_VERSION = 1
+
 SCHEMA_SQL = """
 PRAGMA journal_mode = WAL;
 PRAGMA synchronous  = NORMAL;
@@ -70,6 +77,21 @@ CREATE TABLE IF NOT EXISTS enrichment_state (
 
 CREATE INDEX IF NOT EXISTS idx_state_court   ON enrichment_state(court);
 CREATE INDEX IF NOT EXISTS idx_state_status  ON enrichment_state(status);
+
+-- Phase 4 embedding bookkeeping.
+-- The actual vectors live in a sqlite-vec virtual table (vec_chunks),
+-- created separately after sqlite_vec.load() is called on the connection.
+-- This regular table tracks WHICH chunks have been encoded with WHICH
+-- model version, so we can incrementally re-encode on model upgrades.
+CREATE TABLE IF NOT EXISTS chunk_embeddings_meta (
+    chunk_id           INTEGER PRIMARY KEY,
+    model              TEXT NOT NULL,
+    embedding_version  INTEGER NOT NULL,
+    encoded_at         TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (chunk_id) REFERENCES chunks(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_cemb_version ON chunk_embeddings_meta(embedding_version);
 """
 
 
