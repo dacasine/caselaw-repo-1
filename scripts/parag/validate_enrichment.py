@@ -24,6 +24,7 @@ from search_stack.parag.enrichment import (
     SYSTEM_PROMPT_FULL,
     SYSTEM_PROMPT_LIGHT,
     build_user_prompt,
+    canonicalise_bge,
     validate_full,
 )
 from search_stack.parag.llm_client import SyntheticClient
@@ -131,6 +132,10 @@ def main() -> None:
             print(f"  JSON PARSE FAIL: {exc}")
             print(f"  RAW[:400] = {raw[:400]!r}")
             continue
+
+        # Safety net: force ATF/DTF → BGE so citations line up with our
+        # canonical decision_id format.
+        obj = canonicalise_bge(obj)
 
         errs = validate_full(obj) if not args.light else []
         if errs:

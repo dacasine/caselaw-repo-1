@@ -94,14 +94,28 @@ traitement normatif explicite (confirme, étend, distingue, renverse, \
 critique). Une citation neutre « cf. ATF X Y Z » est `neutral` et peut \
 être omise si on en a beaucoup ; limite-toi aux plus pertinents.
 
-5. **Langue** : rédige `subject_matter`, `question`, `ratio`, \
-`obiter_dicta`, `positions_weighed` dans la langue de l'arrêt \
-(allemand / français / italien). Les champs avec vocabulaire contrôlé \
-(`procedural_stage`, `outcome`, `direction`, `discussed`, \
-`is_leading_case_signal`) restent en anglais / français selon le \
-schéma.
+5. **Langue contextuelle** : rédige `subject_matter`, `question`, \
+`ratio`, `obiter_dicta`, `positions_weighed` dans la langue du TEXTE \
+PRINCIPAL de l'arrêt (les considérants « En droit » / « Erwägungen » / \
+« In diritto »), PAS celle du regeste multilingue ni celle des \
+métadonnées éventuellement contradictoires. Si l'arrêt rédige ses \
+considérants en allemand, tu réponds en allemand ; s'ils sont en \
+français, tu réponds en français ; s'ils sont en italien, tu réponds \
+en italien. Les champs avec vocabulaire contrôlé (`procedural_stage`, \
+`outcome`, `direction`, `discussed`, `is_leading_case_signal`) \
+restent tels quels.
 
-6. **JSON valide** : pas de virgule de fin, pas de commentaires, pas de \
+6. **Citations du Recueil Officiel — préfixe canonique "BGE"** : pour \
+toute citation du Recueil Officiel du Tribunal fédéral suisse, utilise \
+EXCLUSIVEMENT le préfixe "BGE" (jamais "ATF", jamais "DTF") suivi du \
+numéro. Exemples valides : "BGE 128 IV 225", "BGE 135 III 329", "BGE 122 \
+I 39". Cette règle s'applique dans TOUS les champs (y compris \
+`legal_basis`, `cited_decision`, `ratio`, etc.) et INDÉPENDAMMENT de ce \
+que l'arrêt source utilise ("ATF 128 IV 225" dans le texte → tu écris \
+"BGE 128 IV 225"). Raison : la base de données utilise "BGE" comme clé \
+canonique ; toute autre graphie empêche la jointure en aval.
+
+7. **JSON valide** : pas de virgule de fin, pas de commentaires, pas de \
 guillemets typographiques. Échappe les guillemets dans les chaînes.
 """
 
@@ -207,6 +221,37 @@ def build_user_prompt(ctx: DecisionContext, *, light: bool = False,
 OUTCOMES = {"admission", "admission_partielle", "rejet", "irrecevabilite"}
 STAGES = {"recours", "premiere_instance"}
 DIRECTIONS = {"confirms", "develops", "distinguishes", "overrules", "criticizes", "neutral"}
+
+
+# ---------------------------------------------------------------------------
+# Post-hoc safety net: canonicalise BGE references
+# ---------------------------------------------------------------------------
+
+import re as _re
+
+# Match "ATF 128 IV 225", "DTF 128 IV 225", "ATF_128_IV_225" etc.,
+# word-boundary anchored so we don't touch unrelated tokens.
+_BGE_ALIAS_RE = _re.compile(r"\b(?:ATF|DTF)(\s+|_)(\d+[IVXLCDM]*\s+[IVXLCDM]+\s+\d+)", _re.IGNORECASE)
+
+
+def _canonicalise_bge_in_string(s: str) -> str:
+    """Replace ATF/DTF prefixes with BGE in any legal citation."""
+    if not isinstance(s, str):
+        return s
+    return _BGE_ALIAS_RE.sub(r"BGE\1\2", s)
+
+
+def canonicalise_bge(obj):
+    """Walk a parsed JSON object (dict/list/str) and rewrite any
+    ATF/DTF references to the canonical BGE prefix. Safety net in case
+    the LLM ignores the instruction."""
+    if isinstance(obj, dict):
+        return {k: canonicalise_bge(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [canonicalise_bge(v) for v in obj]
+    if isinstance(obj, str):
+        return _canonicalise_bge_in_string(obj)
+    return obj
 
 
 def validate_full(obj: dict) -> list[str]:
