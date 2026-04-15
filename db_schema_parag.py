@@ -92,6 +92,70 @@ CREATE TABLE IF NOT EXISTS chunk_embeddings_meta (
 );
 
 CREATE INDEX IF NOT EXISTS idx_cemb_version ON chunk_embeddings_meta(embedding_version);
+
+-- Phase 5: resolved law-article citations extracted per chunk.
+-- Fed by citation_resolver.resolve_and_store(), sourced from either
+-- the LLM enrichment output ('legal_basis', etc.) or raw-text regex
+-- extraction on the chunk body.
+CREATE TABLE IF NOT EXISTS chunk_law_citations (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    chunk_id            INTEGER NOT NULL,
+    sr_number           TEXT,                 -- NULL if not resolved against statutes.db
+    law_abbr            TEXT NOT NULL,        -- "LTF", "CC", "ZGB", ...
+    article_num         TEXT,                 -- "93", "93bis", "93a", NULL if not parsed
+    paragraph           TEXT,                 -- "1", "3bis", NULL if none
+    letter              TEXT,                 -- "a", "b", NULL if none
+    raw_text            TEXT NOT NULL,        -- original string "art. 93 al. 1 let. a LTF"
+    normalized          TEXT NOT NULL,        -- canonical form
+    source              TEXT NOT NULL,        -- 'llm' | 'regex' | 'both'
+    resolved            INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (chunk_id) REFERENCES chunks(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_clc_chunk   ON chunk_law_citations(chunk_id);
+CREATE INDEX IF NOT EXISTS idx_clc_law     ON chunk_law_citations(law_abbr, article_num);
+CREATE INDEX IF NOT EXISTS idx_clc_sr      ON chunk_law_citations(sr_number, article_num);
+CREATE INDEX IF NOT EXISTS idx_clc_norm    ON chunk_law_citations(normalized);
+
+-- Case citations extracted per chunk (feed authority/temporal graph).
+CREATE TABLE IF NOT EXISTS chunk_case_citations (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    chunk_id            INTEGER NOT NULL,
+    target_decision_id  TEXT NOT NULL,        -- canonical: "BGE 128 IV 225" or "BGer 6B_123_2019"
+    citation_type       TEXT NOT NULL,        -- 'bge' | 'docket'
+    raw_text            TEXT NOT NULL,
+    source              TEXT NOT NULL,        -- 'llm' | 'regex' | 'both'
+    direction           TEXT,                 -- from LLM prior_case_treatment: confirms|overrules|...
+    FOREIGN KEY (chunk_id) REFERENCES chunks(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_ccc_chunk   ON chunk_case_citations(chunk_id);
+CREATE INDEX IF NOT EXISTS idx_ccc_target  ON chunk_case_citations(target_decision_id);
+
+-- Per-decision enrichment (Phase 5) results. Kept separate from
+-- enrichment_state (which tracks SAC-level processing).
+CREATE TABLE IF NOT EXISTS decision_enrichment (
+    decision_id         TEXT PRIMARY KEY,
+    court               TEXT NOT NULL,
+    procedural_stage    TEXT,                  -- 'recours' | 'premiere_instance'
+    outcome             TEXT,                  -- 'admission' | 'admission_partielle' | 'rejet' | 'irrecevabilite'
+    subject_matter      TEXT,
+    principle_questions TEXT,                  -- JSON array of {question, ratio, legal_basis}
+    obiter_dicta        TEXT,                  -- JSON array of strings
+    doctrine_discussion TEXT,                  -- JSON object
+    language_detected   TEXT,                  -- de | fr | it — body-text language
+    source_hash         TEXT,
+    prompt_version      INTEGER NOT NULL DEFAULT 1,
+    llm_latency_s       REAL,
+    prompt_tokens       INTEGER,
+    completion_tokens   INTEGER,
+    status              TEXT NOT NULL,         -- 'ok' | 'error' | 'parse_fail'
+    error_message       TEXT,
+    processed_at        TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_denrich_outcome ON decision_enrichment(outcome);
+CREATE INDEX IF NOT EXISTS idx_denrich_status  ON decision_enrichment(status);
 """
 
 
