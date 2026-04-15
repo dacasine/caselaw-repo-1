@@ -19,6 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from db_schema_parag import DEFAULT_PARAG_DB
+from search_stack.parag.citation_resolver import CitationResolver
 from search_stack.parag.enrichment import (
     DecisionContext,
     SYSTEM_PROMPT_FULL,
@@ -99,6 +100,9 @@ def main() -> None:
 
     client = SyntheticClient(rate_limit_per_minute=10)
     system = SYSTEM_PROMPT_LIGHT if args.light else SYSTEM_PROMPT_FULL
+    resolver = CitationResolver(
+        statutes_db_path=Path.home() / ".swiss-caselaw" / "statutes.db"
+    )
 
     for i, d in enumerate(decs, 1):
         ctx = DecisionContext(**d)
@@ -168,6 +172,25 @@ def main() -> None:
             print(f"  prior_case_treatment ({len(trs)}):")
             for t in trs[:5]:
                 print(f"    · {t.get('cited_decision', '?')} → {t.get('direction', '?')}")
+
+        # Canonicalise + extract citations (resolver works even without statutes.db)
+        llm_basis: list[str] = []
+        for pq in pqs:
+            llm_basis.extend(pq.get("legal_basis", []) or [])
+        llm_basis.extend(obj.get("legal_basis_main", []) or [])  # light variant
+
+        laws, cases = resolver.resolve_chunk(
+            chunk_text=d["full_text"],
+            llm_legal_basis=llm_basis,
+            llm_prior_cases=trs,
+        )
+        resolved_n = sum(1 for c in laws if c.resolved)
+        print(f"\n  citations: {len(laws)} laws ({resolved_n} resolved), {len(cases)} cases")
+        for c in laws[:8]:
+            marker = "OK" if c.resolved else "--"
+            print(f"    [{marker}] {c.normalized:<28} sr={c.sr_number or '-'}  src={c.source}")
+        for c in cases[:6]:
+            print(f"    > {c.target_decision_id:<25} {c.citation_type:<7} src={c.source}  dir={c.direction or '-'}")
 
 
 if __name__ == "__main__":
