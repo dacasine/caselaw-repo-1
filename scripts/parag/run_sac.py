@@ -17,8 +17,11 @@ import sqlite3
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
 from db_schema_parag import DEFAULT_PARAG_DB, init_parag_schema
 from search_stack.parag.llm_client import SyntheticClient
+from search_stack.parag.openrouter_client import OpenRouterClient
 from search_stack.parag.worker import DecisionRow, run_many
 
 
@@ -75,6 +78,9 @@ def main() -> None:
     ap.add_argument("--order", choices=["id", "random", "length"], default="id",
                     help="Row ordering (default: id = deterministic)")
     ap.add_argument("--where", default="", help="Extra SQL WHERE clause")
+    ap.add_argument("--provider", choices=["synthetic", "openrouter"], default="openrouter",
+                    help="LLM provider (default: openrouter)")
+    ap.add_argument("--model", default=None, help="Model id override")
     ap.add_argument("--src-db", type=Path, default=DEFAULT_SOURCE_DB)
     ap.add_argument("--parag-db", type=Path, default=DEFAULT_PARAG_DB)
     args = ap.parse_args()
@@ -91,7 +97,18 @@ def main() -> None:
         print("Nothing to do.", file=sys.stderr)
         return
 
-    client = SyntheticClient(rate_limit_per_minute=args.rate)
+    if args.provider == "openrouter":
+        client = OpenRouterClient(
+            model=args.model or "google/gemini-2.0-flash-001",
+            fallback_model="google/gemini-2.5-flash",
+            rate_limit_per_minute=args.rate,
+        )
+    else:
+        client = SyntheticClient(
+            model=args.model,
+            rate_limit_per_minute=args.rate,
+        )
+    print(f"Provider: {args.provider}  model={client.model}", file=sys.stderr)
 
     agg = run_many(
         rows,
