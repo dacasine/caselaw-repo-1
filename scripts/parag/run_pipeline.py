@@ -105,8 +105,10 @@ def pipeline_for_scope(
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--scopes", nargs="+", required=True,
-                    help="Court codes to process in order (e.g. bger bvger bstger)")
+    ap.add_argument("--scopes", nargs="*", default=[],
+                    help="Court codes to process in FULL mode (federal courts)")
+    ap.add_argument("--light-scopes", nargs="*", default=[],
+                    help="Court codes to process in LIGHT mode (usually cantonal)")
     ap.add_argument("--sac-workers", type=int, default=16)
     ap.add_argument("--sac-rate", type=int, default=300)
     ap.add_argument("--sac-model", default="google/gemini-2.0-flash-001")
@@ -114,15 +116,26 @@ def main() -> None:
     ap.add_argument("--phase5-rate", type=int, default=420)
     ap.add_argument("--phase5-model", default="google/gemini-2.0-flash-001")
     ap.add_argument("--embed-batch", type=int, default=2)
-    ap.add_argument("--light-phase5", action="store_true",
-                    help="Use SYSTEM_PROMPT_LIGHT for Phase 5 (default: FULL)")
     ap.add_argument("--limit", type=int, default=None,
                     help="Cap decisions per scope (testing)")
     ap.add_argument("--log-dir", type=Path, default=Path("logs"))
     args = ap.parse_args()
 
+    if not args.scopes and not args.light_scopes:
+        ap.error("at least one of --scopes or --light-scopes required")
+
+    # Build ordered plan: FULL scopes first (usually federal, higher authority),
+    # then LIGHT (usually cantonal, volume-heavy).
+    plan: list[tuple[str, bool]] = [(s, False) for s in args.scopes]
+    plan += [(s, True) for s in args.light_scopes]
+
+    print(f"[{ts()}] pipeline plan: {len(plan)} scope(s)")
+    for scope, light in plan:
+        print(f"  - {scope:<35} {'LIGHT' if light else 'FULL'}")
+    print()
+
     t_start = time.monotonic()
-    for scope in args.scopes:
+    for scope, is_light in plan:
         t_scope = time.monotonic()
         pipeline_for_scope(
             scope,
@@ -131,7 +144,7 @@ def main() -> None:
             phase5_workers=args.phase5_workers, phase5_rate=args.phase5_rate,
             phase5_model=args.phase5_model,
             embed_batch=args.embed_batch,
-            light_phase5=args.light_phase5,
+            light_phase5=is_light,
             limit=args.limit,
             log_dir=args.log_dir,
         )
@@ -140,7 +153,7 @@ def main() -> None:
 
     total_dt = time.monotonic() - t_start
     print(f"\n[{ts()}] pipeline done in {total_dt/60:.1f} min across "
-          f"{len(args.scopes)} scope(s)")
+          f"{len(plan)} scope(s)")
 
 
 if __name__ == "__main__":
