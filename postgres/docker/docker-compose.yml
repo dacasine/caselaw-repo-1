@@ -1,0 +1,130 @@
+# Full Hetzner stack: Postgres (caselaw + doctrine), Caddy, embedder, chat UI.
+# Launch with:  cd postgres/docker && docker compose up -d
+# Edit .env (cp .env.example .env) before first run.
+
+name: caselaw
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  pg_caselaw_data:
+  pg_doctrine_data:
+  caddy_data:
+  caddy_config:
+  embedder_models:
+
+services:
+
+  # ── Primary DB: caselaw (965k decisions, 1M+ chunks, pgvectorscale) ──
+  postgres_caselaw:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.postgres
+    image: caselaw/postgres:16
+    container_name: caselaw_pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${PG_CASELAW_USER:-caselaw}
+      POSTGRES_PASSWORD: ${PG_CASELAW_PASSWORD:?pg password required}
+      POSTGRES_DB: caselaw
+      # Tuning for a 128 GB RAM / 16 core host (Hetzner AX102).
+      # Passed as Postgres startup args.
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    command: >
+      postgres
+        -c shared_buffers=16GB
+        -c effective_cache_size=48GB
+        -c maintenance_work_mem=2GB
+        -c work_mem=64MB
+        -c wal_buffers=16MB
+        -c max_wal_size=8GB
+        -c min_wal_size=2GB
+        -c max_worker_processes=16
+        -c max_parallel_workers=16
+        -c max_parallel_workers_per_gather=4
+        -c random_page_cost=1.1
+        -c effective_io_concurrency=200
+        -c log_min_duration_statement=1000
+    volumes:
+      - pg_caselaw_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d caselaw"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ── Second DB: doctrine (books, commentaries, Online Kommentar) ──
+  postgres_doctrine:
+    image: caselaw/postgres:16
+    container_name: caselaw_pg_doctrine
+    restart: unless-stopped
+    depends_on: [postgres_caselaw]   # lazy dep — both use same image
+    environment:
+      POSTGRES_USER: ${PG_DOCTRINE_USER:-doctrine}
+      POSTGRES_PASSWORD: ${PG_DOCTRINE_PASSWORD:?pg password required}
+      POSTGRES_DB: doctrine
+    command: >
+      postgres
+        -c shared_buffers=8GB
+        -c effective_cache_size=24GB
+        -c maintenance_work_mem=1GB
+        -c work_mem=32MB
+        -c max_wal_size=4GB
+        -c random_page_cost=1.1
+        -c effective_io_concurrency=200
+    volumes:
+      - pg_doctrine_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5433:5432"
+    networks: [internal]
+
+  # ── BGE-M3 embedder as HTTP microservice (CPU by default) ──
+  embedder:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
+    container_name: caselaw_embedder
+    restart: unless-stopped
+    environment:
+      - MODEL_ID=BAAI/bge-m3
+      - MAX_CLIENT_BATCH_SIZE=32
+      - MAX_BATCH_TOKENS=8192
+      - HUGGINGFACE_HUB_CACHE=/data
+    volumes:
+      - embedder_models:/data
+    ports:
+      - "127.0.0.1:8080:80"
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost/health"]
+      interval: 30s
+
+  # ── LibreChat front-end (OpenAI-compatible, with MCP support) ──
+  librechat:
+    image: ghcr.io/danny-avila/librechat:latest
+    container_name: caselaw_chat
+    restart: unless-stopped
+    env_file: [.env.chat]
+    depends_on: [postgres_caselaw]
+    volumes:
+      - ./librechat/librechat.yaml:/app/librechat.yaml
+      - ./librechat/images:/app/client/public/images
+    networks: [internal]
+
+  # ── Reverse proxy + auto-HTTPS via Let's Encrypt ──
+  caddy:
+    image: caddy:2-alpine
+    container_name: caselaw_caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [internal]
+    depends_on: [librechat]

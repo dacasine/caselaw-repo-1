@@ -1,0 +1,27 @@
+# Custom Postgres 16 image with pgvector + pgvectorscale + pg_trgm + unaccent.
+# Based on the official Timescale image which ships pgvectorscale pre-built.
+#
+# Build:
+#   docker build -f Dockerfile.postgres -t caselaw/postgres:16 .
+#
+# The Timescale image includes pg_vectorscale (their branded name for the
+# same Rust-based DiskANN index); compatible with `CREATE EXTENSION vectorscale`.
+
+FROM timescale/timescaledb-ha:pg16
+
+# timescale-ha is based on Debian bookworm; add our extras.
+USER root
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       postgresql-16-pgvector \
+       postgresql-contrib \
+    && rm -rf /var/lib/apt/lists/*
+
+# Migrations applied at container init (idempotent CREATE ... IF NOT EXISTS).
+COPY migrations/ /docker-entrypoint-initdb.d/migrations/
+
+# Small wrapper that runs every SQL file in order on first start.
+COPY docker/postgres-init.sh /docker-entrypoint-initdb.d/00-run-migrations.sh
+RUN chmod +x /docker-entrypoint-initdb.d/00-run-migrations.sh
+
+USER postgres

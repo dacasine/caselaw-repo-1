@@ -1,0 +1,24 @@
+# Caddy reverse proxy — auto-HTTPS via Let's Encrypt.
+# Replace `caselaw.tondomaine.ch` with your actual domain (and DNS A-record).
+
+{$PUBLIC_HOST:caselaw.example.ch} {
+    encode gzip zstd
+
+    # Chat UI (LibreChat)
+    reverse_proxy librechat:3080
+
+    # Basic security headers
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options    "nosniff"
+        Referrer-Policy           "same-origin"
+    }
+}
+
+# Optional: Supabase Studio on a subdomain. Uncomment and add DNS.
+# studio.{$PUBLIC_HOST:caselaw.example.ch} {
+#     reverse_proxy supabase-studio:3000
+#     basicauth {
+#         admin {$STUDIO_BASIC_AUTH_HASH}
+#     }
+# }
