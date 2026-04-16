@@ -156,6 +156,28 @@ CREATE TABLE IF NOT EXISTS decision_enrichment (
 
 CREATE INDEX IF NOT EXISTS idx_denrich_outcome ON decision_enrichment(outcome);
 CREATE INDEX IF NOT EXISTS idx_denrich_status  ON decision_enrichment(status);
+
+-- Per-decision authority scoring (pilier 1 + 2 + 3 of PA-RAG).
+-- Populated by post-processing jobs AFTER enrichment runs complete.
+CREATE TABLE IF NOT EXISTS decision_authority (
+    decision_id       TEXT PRIMARY KEY,
+    court_level       INTEGER,            -- 1 (admin) → 5 (TF)
+    atf_published     INTEGER DEFAULT 0,  -- 1 if in Recueil Officiel
+    authority_score   REAL,               -- composite static score
+    pagerank_raw      REAL,               -- unweighted PageRank
+    pagerank_temporal REAL,               -- time-decayed PageRank
+    validity_status   TEXT,               -- 'valid'|'overruled'|'criticized'|'distinguished'
+    n_overruled_by    INTEGER DEFAULT 0,  -- count of decisions that overrule this one
+    n_criticized_by   INTEGER DEFAULT 0,
+    n_confirmed_by    INTEGER DEFAULT 0,
+    n_cited_by        INTEGER DEFAULT 0,  -- total inbound citations
+    computed_at       TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_dauth_level  ON decision_authority(court_level);
+CREATE INDEX IF NOT EXISTS idx_dauth_valid  ON decision_authority(validity_status);
+CREATE INDEX IF NOT EXISTS idx_dauth_score  ON decision_authority(authority_score DESC);
+CREATE INDEX IF NOT EXISTS idx_dauth_prank  ON decision_authority(pagerank_temporal DESC);
 """
 
 
