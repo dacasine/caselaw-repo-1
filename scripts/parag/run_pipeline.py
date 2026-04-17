@@ -31,21 +31,19 @@ def ts() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
-def run_step(name: str, cmd: list[str], log_path: Path) -> int:
+def run_step(name: str, cmd: list[str], log_path: Path,
+             env_extra: dict[str, str] | None = None) -> int:
     """Run a subcommand, streaming output to a log file. Returns exit code."""
-    print(f"[{ts()}] ▶ {name}  log={log_path}")
-    print(f"       cmd: {' '.join(cmd[:6])}{' …' if len(cmd) > 6 else ''}")
+    print(f"[{ts()}] ▶ {name}  log={log_path}", flush=True)
+    print(f"       cmd: {' '.join(cmd[:6])}{' …' if len(cmd) > 6 else ''}", flush=True)
     log_path.parent.mkdir(parents=True, exist_ok=True)
+    env = {**dict(__import__("os").environ), "PYTHONPATH": str(REPO_ROOT)}
+    if env_extra:
+        env.update(env_extra)
     with log_path.open("w") as fh:
-        result = subprocess.run(
-            cmd, stdout=fh, stderr=subprocess.STDOUT,
-            cwd=REPO_ROOT, env={
-                **dict(__import__("os").environ),
-                "PYTHONPATH": str(REPO_ROOT),
-            },
-        )
+        result = subprocess.run(cmd, stdout=fh, stderr=subprocess.STDOUT, cwd=REPO_ROOT, env=env)
     status = "✓ OK" if result.returncode == 0 else f"✗ exit={result.returncode}"
-    print(f"[{ts()}] {status}  {name}")
+    print(f"[{ts()}] {status}  {name}", flush=True)
     return result.returncode
 
 
@@ -62,6 +60,7 @@ def pipeline_for_scope(
     light_phase5: bool,
     limit: int | None,
     log_dir: Path,
+    **kwargs,
 ) -> None:
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     py = str(REPO_ROOT / ".venv" / "bin" / "python")
@@ -81,13 +80,20 @@ def pipeline_for_scope(
         cmd += ["--limit", str(limit)]
     run_step(f"SAC {scope}", cmd, log_dir / f"pipeline_sac_{scope}_{stamp}.log")
 
-    # 2. Embedder — encode new chunks
-    cmd = [
-        py, "scripts/parag/run_embed.py",
-        "--batch", str(embed_batch), "--device", "cpu",
-        "--where", f"c.court = '{scope}'",
-    ]
-    run_step(f"Embed {scope}", cmd, log_dir / f"pipeline_embed_{scope}_{stamp}.log")
+    # 2. Embedder — encode new chunks (skippable to avoid SQLite contention)
+    if not light_phase5 and not kwargs.get("skip_embed"):
+        env_extra = {
+            "OMP_NUM_THREADS": str(kwargs.get("embed_threads", 10)),
+            "MKL_NUM_THREADS": str(kwargs.get("embed_threads", 10)),
+            "TORCH_NUM_THREADS": str(kwargs.get("embed_threads", 10)),
+        }
+        cmd = [
+            py, "scripts/parag/run_embed.py",
+            "--batch", str(embed_batch), "--device", "cpu",
+            "--where", f"c.court = '{scope}'",
+        ]
+        run_step(f"Embed {scope}", cmd, log_dir / f"pipeline_embed_{scope}_{stamp}.log",
+                 env_extra=env_extra)
 
     # 3. Phase 5 — per-decision enrichment + per-chunk citations
     cmd = [
@@ -115,7 +121,11 @@ def main() -> None:
     ap.add_argument("--phase5-workers", type=int, default=24)
     ap.add_argument("--phase5-rate", type=int, default=420)
     ap.add_argument("--phase5-model", default="google/gemini-2.0-flash-001")
-    ap.add_argument("--embed-batch", type=int, default=2)
+    ap.add_argument("--embed-batch", type=int, default=16)
+    ap.add_argument("--embed-threads", type=int, default=10,
+                    help="torch threads for embedder (default: 10)")
+    ap.add_argument("--skip-embed", action="store_true",
+                    help="Skip embed step (run separately to avoid DB contention)")
     ap.add_argument("--limit", type=int, default=None,
                     help="Cap decisions per scope (testing)")
     ap.add_argument("--log-dir", type=Path, default=Path("logs"))
@@ -147,6 +157,8 @@ def main() -> None:
             light_phase5=is_light,
             limit=args.limit,
             log_dir=args.log_dir,
+            skip_embed=args.skip_embed,
+            embed_threads=args.embed_threads,
         )
         dt = time.monotonic() - t_scope
         print(f"[{ts()}] scope {scope} complete in {dt/60:.1f} min")
