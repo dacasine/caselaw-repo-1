@@ -77,6 +77,7 @@ class OpenRouterClient:
         )
         self.timeout_s = request_timeout_s
         self.rate = RateLimiter(rate_limit_per_minute)
+        self.quota = None  # OpenRouter has no quota monitor (unlike SyntheticClient)
         self._app_title = app_title
         self._app_referer = app_referer
 
