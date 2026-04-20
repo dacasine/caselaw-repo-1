@@ -32,6 +32,90 @@ from pathlib import Path
 
 logger = logging.getLogger("run_scraper")
 
+
+# Coverage tracking is persisted to a DEDICATED SQLite file in state/
+# rather than sharing the live 62 GB output/decisions.db that the MCP
+# workers read with `immutable=1`. Sharing the file caused occasional
+# "database disk image is malformed" errors on the read side when a
+# scraper commit overlapped an MCP query; isolating coverage writes
+# eliminates that contention entirely.
+COVERAGE_DB_FILENAME = "coverage.db"
+
+
+def _coverage_db_path(output_dir: Path) -> Path:
+    """Resolve the coverage DB path, honouring an optional override.
+
+    Default: <repo>/state/coverage.db — isolated from output/decisions.db.
+    The env var SWISS_CASELAW_COVERAGE_DB can relocate it (e.g. on the
+    large volume). output_dir is unused now but kept for API stability.
+    """
+    import os
+    override = os.environ.get("SWISS_CASELAW_COVERAGE_DB")
+    if override:
+        return Path(override)
+    repo_root = Path(__file__).resolve().parent
+    state_dir = repo_root / "state"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    return state_dir / COVERAGE_DB_FILENAME
+
+
+def _maybe_migrate_coverage_from_main_db(target_path: Path, output_dir: Path) -> None:
+    """One-time migration from output/decisions.db → state/coverage.db.
+
+    Runs once on startup when the target DB is empty / has no coverage
+    tables and the main DB still has legacy coverage rows. Copies all five
+    coverage tables via ATTACH; idempotent (skips if the target already
+    has rows).
+    """
+    if target_path.exists() and target_path.stat().st_size > 0:
+        # Already populated — no migration needed.
+        try:
+            conn = sqlite3.connect(f"file:{target_path}?mode=ro", uri=True)
+            n = conn.execute(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='coverage_targets'"
+            ).fetchone()[0]
+            if n:
+                existing = conn.execute("SELECT COUNT(*) FROM coverage_targets").fetchone()[0]
+                conn.close()
+                if existing > 0:
+                    return
+            else:
+                conn.close()
+        except sqlite3.Error:
+            pass  # fall through to re-migrate
+
+    legacy = output_dir / "decisions.db"
+    if not legacy.exists():
+        return
+
+    logger.info(f"[coverage] Migrating coverage tables {legacy} → {target_path}")
+    try:
+        conn = sqlite3.connect(str(target_path), timeout=30.0)
+        conn.execute("PRAGMA busy_timeout = 30000")
+        from coverage_report import ensure_coverage_tables
+        ensure_coverage_tables(conn)
+        conn.execute(f"ATTACH DATABASE ? AS legacy", (str(legacy),))
+        for table in (
+            "coverage_targets",
+            "source_snapshots",
+            "source_discoveries",
+            "source_fetch_attempts",
+            "gap_queue",
+        ):
+            try:
+                conn.execute(
+                    f"INSERT OR IGNORE INTO {table} SELECT * FROM legacy.{table}"
+                )
+            except sqlite3.OperationalError as e:
+                # Legacy table may be missing on a fresh install — skip.
+                logger.debug(f"[coverage] skipping {table}: {e}")
+        conn.commit()
+        conn.execute("DETACH DATABASE legacy")
+        conn.close()
+    except Exception as e:
+        logger.warning(f"[coverage] migration failed (non-fatal): {e}")
+
+
 # Scraper registry — add new scrapers here
 SCRAPERS = {
     # Federal
@@ -52,6 +136,8 @@ SCRAPERS = {
     "elcom": ("scrapers.elcom", "ElComScraper"),
     "postcom": ("scrapers.postcom", "PostComScraper"),
     "comcom": ("scrapers.comcom", "ComComScraper"),
+    # Federal — military
+    "mkg": ("scrapers.militaerkassationsgericht", "MilitaerkassationsgerichtScraper"),
     # Cantonal — implemented
     "ag_gerichte": ("scrapers.cantonal.ag_gerichte", "AGGerichteScraper"),
     "ai_gerichte": ("scrapers.cantonal.ai_gerichte", "AIGerichteScraper"),
@@ -154,6 +240,20 @@ def _infer_decision_year(
     return None
 
 
+def _ensure_trailing_newline(jsonl_path: Path) -> None:
+    """If the file exists and its last byte is not '\\n', append one.
+
+    Prevents fused-line corruption when a previous run crashed mid-write and
+    the next run opens the file in append mode.
+    """
+    if not jsonl_path.exists() or jsonl_path.stat().st_size == 0:
+        return
+    with open(jsonl_path, "rb+") as f:
+        f.seek(-1, 2)
+        if f.read(1) != b"\n":
+            f.write(b"\n")
+
+
 def _load_written_ids_and_years(jsonl_path: Path) -> tuple[set[str], dict[int, set[str]]]:
     """Load already-written decision IDs and year buckets from a JSONL file."""
     written_ids: set[str] = set()
@@ -200,9 +300,10 @@ def _record_coverage_snapshots(
 
     from coverage_report import ensure_coverage_tables, record_snapshot
 
-    db_path = output_dir / "decisions.db"
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(db_path))
+    db_path = _coverage_db_path(output_dir)
+    _maybe_migrate_coverage_from_main_db(db_path, output_dir)
+    conn = sqlite3.connect(str(db_path), timeout=30.0)
+    conn.execute("PRAGMA busy_timeout = 30000")
     conn.row_factory = sqlite3.Row
     try:
         ensure_coverage_tables(conn)
@@ -256,9 +357,13 @@ class _RunEventWriter:
         try:
             from coverage_report import ensure_coverage_tables
 
-            db_path = self.output_dir / "decisions.db"
-            db_path.parent.mkdir(parents=True, exist_ok=True)
-            conn = sqlite3.connect(str(db_path))
+            db_path = _coverage_db_path(self.output_dir)
+            _maybe_migrate_coverage_from_main_db(db_path, self.output_dir)
+            # Still keeping the 30s busy_timeout even though the dedicated
+            # coverage DB eliminates the decisions.db contention — parallel
+            # scrapers writing to the same coverage.db also need serialisation.
+            conn = sqlite3.connect(str(db_path), timeout=30.0)
+            conn.execute("PRAGMA busy_timeout = 30000")
             ensure_coverage_tables(conn)
             self._conn = conn
             self._enabled = True
@@ -280,8 +385,14 @@ class _RunEventWriter:
         try:
             if self._pending:
                 self._conn.commit()
+        except sqlite3.OperationalError as e:
+            # Don't crash the scraper if the coverage DB was locked at commit time
+            logger.warning(f"[{self.source_key}] Event commit failed (non-fatal): {e}")
         finally:
-            self._conn.close()
+            try:
+                self._conn.close()
+            except Exception:
+                pass
             self._conn = None
             self._enabled = False
 
@@ -422,6 +533,7 @@ def run_with_persistence(
 
     # Load already-written decision IDs from output JSONL (for dedup on restart)
     written_ids, written_ids_by_year = _load_written_ids_and_years(jsonl_path)
+    _ensure_trailing_newline(jsonl_path)
     if jsonl_path.exists():
         logger.info(f"Loaded {len(written_ids)} already-written decisions from {jsonl_path}")
 
@@ -625,14 +737,21 @@ def main():
     for noisy in ("pdfminer", "pdfplumber", "urllib3", "chardet", "charset_normalizer"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
-    exit_code = run_with_persistence(
-        scraper_key=args.scraper,
-        since_date=args.since,
-        max_decisions=args.max,
-        output_dir=Path(args.output),
-        state_dir=Path(args.state),
-        auto_coverage_snapshot=not args.no_coverage_snapshot,
-    )
+    try:
+        exit_code = run_with_persistence(
+            scraper_key=args.scraper,
+            since_date=args.since,
+            max_decisions=args.max,
+            output_dir=Path(args.output),
+            state_dir=Path(args.state),
+            auto_coverage_snapshot=not args.no_coverage_snapshot,
+        )
+    except Exception:
+        # Capture the traceback in the per-scraper log file (orchestrator
+        # subprocess.run() with stderr=DEVNULL hides bare tracebacks otherwise,
+        # making post-mortem diagnosis impossible).
+        logger.exception(f"[{args.scraper}] Unhandled exception")
+        sys.exit(1)
 
     if exit_code:
         sys.exit(1)
