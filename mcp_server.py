@@ -176,6 +176,7 @@ OK_COMMENTARIES_DB_PATH = Path(os.environ.get("SWISS_CASELAW_OK_DB", str(DATA_DI
 LEXFIND_CACHE_DB_PATH = Path(os.environ.get("SWISS_CASELAW_LEXFIND_CACHE", str(DATA_DIR / "lexfind_cache.db")))
 MATERIALIEN_DB_PATH = Path(os.environ.get("SWISS_CASELAW_MATERIALIEN_DB", str(DATA_DIR / "materialien.db")))
 ANWALTSRECHT_TAGS_DB_PATH = Path(os.environ.get("SWISS_CASELAW_ANWALTSRECHT_DB", str(DATA_DIR / "anwaltsrecht_tags.db")))
+DECISION_STRUCTURE_DB_PATH = Path(os.environ.get("SWISS_CASELAW_STRUCTURE_DB", str(DATA_DIR / "decision_structure.db")))
 GRAPH_SIGNALS_ENABLED = os.environ.get("SWISS_CASELAW_GRAPH_SIGNALS", "1").lower() not in {
     "0",
     "false",
@@ -301,29 +302,57 @@ _LLM_EXPANSION_CACHE: dict[str, list[str]] = {}
 # Returns deterministic JSON instead of free-text terms.
 # Drives statute-graph retrieval and BGE direct-lookup reliably.
 STRUCTURED_PARSE_PROMPT = (
-    "You are a Swiss legal search assistant. Parse the user's query and return "
-    "a JSON object with these fields:\n"
+    "You are a Swiss legal search assistant. Switzerland is multilingual: "
+    "decisions are published in DE/FR/IT and the same legal concept has different "
+    "canonical names per language. A user query in any language must be expanded "
+    "into all three to retrieve relevant decisions across the corpus.\n"
+    "\n"
+    "Parse the user's query and return a JSON object with these fields:\n"
     '  "statutes": list of statute references as "ABBREV ART" (e.g. ["OR 41", "ZGB 28"]). '
     "ALWAYS infer relevant statutes even when no article is explicitly mentioned — "
     "use the legal topic to identify the governing provisions.\n"
-    '  "doctrine": the precise German legal doctrine name (Rechtsbegriff), e.g. "Tierhalterhaftung"\n'
+    '  "doctrine": the precise GERMAN legal doctrine name (Rechtsbegriff), e.g. "Tierhalterhaftung". '
+    'ALWAYS provide this in German, regardless of input language.\n'
+    '  "doctrine_fr": the precise FRENCH legal doctrine name, e.g. '
+    '"responsabilité du détenteur d\'animaux". REQUIRED — never empty.\n'
+    '  "doctrine_it": the precise ITALIAN legal doctrine name, e.g. '
+    '"responsabilità del detentore di animali". REQUIRED — never empty.\n'
     '  "leading_bge": list of leading BGE references you are CERTAIN about, as "BGE VOL DIV PAGE" '
     '(e.g. ["BGE 131 III 115"]). Only include if you are confident.\n'
-    '  "synonyms": 2-4 alternative German/French/Italian legal terms\n'
+    '  "synonyms": 2-4 alternative legal terms across DE/FR/IT (broader than doctrine names — '
+    'related concepts, sub-doctrines, common variants)\n'
     '  "domain": one of "civil", "criminal", "public", "social-insurance", "administrative"\n'
     "Rules:\n"
-    "- ALWAYS translate colloquial language to the legal doctrine name\n"
-    "- For statutes, use standard abbreviations: OR, ZGB, StGB, StPO, ZPO, SchKG, BV, AIG, "
-    "IRSG, AsylG, BGG, VwVG, EMRK, SVG, UVG, KVG, AHVG, IVG, etc.\n"
-    "- Even for semantic queries without 'Art.', infer the most relevant statute provisions\n"
-    "- If unsure about a BGE, omit it from leading_bge rather than guessing\n"
-    "- Output ONLY valid JSON, no markdown fences, no explanation\n"
+    "- The query may arrive in DE, FR, IT, or even colloquial mixed language. "
+    "ALWAYS produce all three doctrine variants regardless of input.\n"
+    "- ALWAYS translate colloquial language to the precise legal doctrine.\n"
+    "- For statutes, use standard abbreviations: OR (CO/CO), ZGB (CC/CC), StGB (CP/CP), "
+    "StPO, ZPO, SchKG, BV, AIG, IRSG, AsylG, BGG, VwVG, EMRK (CEDH), SVG, UVG, KVG, AHVG, IVG, etc.\n"
+    "- Even for semantic queries without 'Art.', infer the most relevant statute provisions.\n"
+    "- If unsure about a BGE, omit it from leading_bge rather than guessing.\n"
+    "- Output ONLY valid JSON, no markdown fences, no explanation.\n"
     "Examples:\n"
-    '  "Hundebiss" -> {"statutes":["OR 56"],"doctrine":"Tierhalterhaftung","leading_bge":["BGE 131 III 115"],"synonyms":["responsabilité du détenteur d\'animaux","Haftpflicht"],"domain":"civil"}\n'
-    '  "Notwehr Strafrecht" -> {"statutes":["StGB 15","StGB 16"],"doctrine":"Notwehr","leading_bge":["BGE 107 IV 12"],"synonyms":["légitime défense","legittima difesa","Notwehrexzess"],"domain":"criminal"}\n'
-    '  "Pflichtteil Enterbung" -> {"statutes":["ZGB 470","ZGB 471","ZGB 477"],"doctrine":"Pflichtteilsrecht","leading_bge":["BGE 132 III 677"],"synonyms":["réserve héréditaire","Enterbung","riserva ereditaria"],"domain":"civil"}\n'
-    '  "Auslieferung an Rumänien" -> {"statutes":["IRSG 25","IRSG 55"],"doctrine":"Auslieferung","leading_bge":[],"synonyms":["extradition","estradizione","entraide judiciaire"],"domain":"criminal"}\n'
-    '  "danno morale responsabilità civile" -> {"statutes":["OR 49","OR 47"],"doctrine":"Genugtuung","leading_bge":[],"synonyms":["tort moral","Genugtuung","Persönlichkeitsverletzung","immaterielle Unbill"],"domain":"civil"}\n'
+    '  "Hundebiss" -> {"statutes":["OR 56"],"doctrine":"Tierhalterhaftung",'
+    '"doctrine_fr":"responsabilité du détenteur d\'animaux",'
+    '"doctrine_it":"responsabilità del detentore di animali",'
+    '"leading_bge":["BGE 131 III 115"],"synonyms":["Tierhalter","Haftpflicht","danno da animali"],'
+    '"domain":"civil"}\n'
+    '  "résiliation bail abusive" -> {"statutes":["OR 271","OR 271a"],"doctrine":"missbräuchliche Kündigung",'
+    '"doctrine_fr":"résiliation abusive du bail","doctrine_it":"disdetta abusiva della locazione",'
+    '"leading_bge":["BGE 138 III 59"],"synonyms":["Mietrecht","Kündigungsschutz","disdetta locazione"],'
+    '"domain":"civil"}\n'
+    '  "danno morale responsabilità civile" -> {"statutes":["OR 49","OR 47"],"doctrine":"Genugtuung",'
+    '"doctrine_fr":"tort moral","doctrine_it":"riparazione morale",'
+    '"leading_bge":[],"synonyms":["Persönlichkeitsverletzung","tort moral","immaterielle Unbill"],'
+    '"domain":"civil"}\n'
+    '  "Notwehr Strafrecht" -> {"statutes":["StGB 15","StGB 16"],"doctrine":"Notwehr",'
+    '"doctrine_fr":"légitime défense","doctrine_it":"legittima difesa",'
+    '"leading_bge":["BGE 107 IV 12"],"synonyms":["Notwehrexzess","excès de légitime défense","stato di necessità"],'
+    '"domain":"criminal"}\n'
+    '  "Pflichtteil Enterbung" -> {"statutes":["ZGB 470","ZGB 471","ZGB 477"],"doctrine":"Pflichtteilsrecht",'
+    '"doctrine_fr":"réserve héréditaire","doctrine_it":"riserva ereditaria",'
+    '"leading_bge":["BGE 132 III 677"],"synonyms":["Enterbung","exhérédation","diseredazione"],'
+    '"domain":"civil"}\n'
 )
 
 _STRUCTURED_PARSE_CACHE: dict[str, dict] = {}
@@ -1665,15 +1694,52 @@ def _sanitize_fts5(query: str) -> str:
     q = query.strip()
     # Replace apostrophes (French: l'obligation)
     q = q.replace("\u2019", " ").replace("'", " ")
-    # Remove bare periods/dots that aren't part of abbreviations (e.g. "Art." is fine, lone "." is not)
+    # Strip dots not followed by a word character. This covers "Art." + space
+    # (FTS5 query parser rejects bare trailing punctuation), end-of-sentence
+    # dots, and ellipses, while preserving in-token dots like "10.2" or
+    # "Art.172" that have word chars on both sides.
     import re
-    q = re.sub(r'(?<!\w)\.(?!\w)', ' ', q)
+    q = re.sub(r'\.(?!\w)', ' ', q)
+    # Strip double quotes — LLM-generated queries use them sporadically and
+    # "" (empty phrase) triggers FTS5 "syntax error near \"\"". Rare legit
+    # use of "phrase" search is outweighed by reliability gain here.
+    q = q.replace('"', ' ')
     # Remove other FTS5 problematic characters
     q = q.replace("(", " ").replace(")", " ").replace("{", " ").replace("}", " ")
     q = q.replace("[", " ").replace("]", " ").replace("^", " ").replace("~", " ")
     # Collapse multiple spaces
     q = re.sub(r'\s+', ' ', q).strip()
-    return q
+    if not q:
+        return ""
+    # FTS5 treats uppercase AND / OR / NOT / NEAR as reserved operators, but
+    # "OR" is ALSO the Swiss statute abbreviation for Obligationenrecht and
+    # gets used as a literal far more often than as a boolean. So:
+    #   - "OR" is ALWAYS quoted (force literal match on the word "OR").
+    #   - AND / NOT / NEAR keep operator semantics when they have operands on
+    #     both sides; otherwise they're stripped so bare-operator queries
+    #     don't fault FTS5.
+    FTS5_RESERVED = {"AND", "NOT", "NEAR"}
+    tokens = q.split()
+    bare_content = [t for t in tokens if t.upper() not in (FTS5_RESERVED | {"OR"})]
+    if not bare_content:
+        return ""
+    out_tokens: list[str] = []
+    for i, t in enumerate(tokens):
+        tu = t.upper()
+        if tu == "OR":
+            out_tokens.append('"OR"')
+        elif tu in FTS5_RESERVED:
+            has_left = i > 0 and tokens[i - 1].upper() not in (FTS5_RESERVED | {"OR"})
+            has_right = any(
+                nt.upper() not in (FTS5_RESERVED | {"OR"})
+                for nt in tokens[i + 1:]
+            )
+            if has_left and has_right:
+                out_tokens.append(tu)       # keep as boolean operator
+            # else: drop bare operator
+        else:
+            out_tokens.append(t)
+    return " ".join(out_tokens)
 
 
 def search_fts5(
@@ -2779,6 +2845,33 @@ def _get_anwaltsrecht_conn() -> sqlite3.Connection | None:
         return conn
     except sqlite3.Error as e:
         logger.warning("Failed to open Anwaltsrecht tags DB: %s", e)
+        return None
+
+
+_structure_warned = False
+
+
+def _get_structure_conn() -> sqlite3.Connection | None:
+    """Open a read-only connection to the decision-structure sidecar DB.
+
+    Sidecar produced by `search_stack/extract_decision_structure.py` —
+    stores per-decision Sachverhalt / Erwägungen-paragraphs / Dispositiv,
+    keyed by decision_id. Used by get_decision_structure / get_erwaegung /
+    get_regeste tools and to enrich get_case_brief responses.
+    """
+    global _structure_warned
+    if not DECISION_STRUCTURE_DB_PATH.exists():
+        if not _structure_warned:
+            logger.info("Decision structure DB not found at %s — structure tools degraded",
+                        DECISION_STRUCTURE_DB_PATH)
+            _structure_warned = True
+        return None
+    try:
+        conn = sqlite3.connect(f"file:{DECISION_STRUCTURE_DB_PATH}?immutable=1", uri=True, timeout=1.0)
+        conn.row_factory = sqlite3.Row
+        return conn
+    except sqlite3.Error as e:
+        logger.warning("Failed to open decision structure DB: %s", e)
         return None
 
 
@@ -5063,12 +5156,28 @@ def _normalize_score_list(scores) -> list[float]:
 
 
 LLM_RERANK_PROMPT = (
-    "You are a Swiss legal search relevance judge. Given a search query and a list of "
-    "court decision candidates, rank them by relevance to the query.\n"
-    "Consider: (1) legal doctrine match, (2) applicable statute provisions, "
-    "(3) factual pattern similarity, (4) court authority level.\n"
-    "Return ONLY a JSON array of decision_id strings in order from most to least relevant. "
-    "Include ALL candidates in the array. Example: [\"bge_BGE_131_III_115\",\"bge_BGE_110_II_136\"]\n"
+    "You are a Swiss legal search relevance judge for a multilingual corpus "
+    "(German, French, Italian). Given a search query and a list of court "
+    "decision candidates whose Regesten may be in any of the three languages, "
+    "rank them by RELEVANCE TO THE QUERY regardless of decision language.\n"
+    "\n"
+    "Critical multilingual rules:\n"
+    "- A French decision may be the most relevant answer to a German query, "
+    "and vice versa. Cross-language equivalence is the norm in Swiss law.\n"
+    "- Map terms across languages: Mietrecht ≡ droit du bail ≡ diritto della "
+    "locazione; Tierhalterhaftung ≡ responsabilité du détenteur d'animaux ≡ "
+    "responsabilità del detentore di animali; etc.\n"
+    "- Do NOT downrank a decision because its Regeste is in a different "
+    "language from the query. The legal substance is what matters.\n"
+    "\n"
+    "Consider: (1) legal doctrine match (across languages), (2) applicable "
+    "statute provisions (same SR-number across languages: OR=CO, ZGB=CC, "
+    "StGB=CP), (3) factual pattern similarity, (4) court authority level "
+    "(BGer/BGE > BVGer/BStGer > kantonal).\n"
+    "\n"
+    "Return ONLY a JSON array of decision_id strings in order from most to "
+    "least relevant. Include ALL candidates in the array. "
+    "Example: [\"bge_BGE_131_III_115\",\"bge_BGE_110_II_136\"]\n"
     "Output ONLY the JSON array, nothing else."
 )
 
@@ -7474,6 +7583,204 @@ server = Server(
 
 
 
+# ── decision-structure helpers (Sachverhalt / Erwägungen / Dispositiv / Regeste) ────────
+
+
+def _fetch_structure_row(decision_id: str) -> dict | None:
+    """Look up the structure-DB row for a decision_id, with id-variant fallback."""
+    conn = _get_structure_conn()
+    if not conn:
+        return None
+    try:
+        for did_variant in _decision_id_variants(decision_id) or [decision_id]:
+            row = conn.execute(
+                "SELECT * FROM structure WHERE decision_id = ?",
+                (did_variant,),
+            ).fetchone()
+            if row:
+                return dict(row)
+        return None
+    finally:
+        conn.close()
+
+
+def _fetch_structure_paragraphs(decision_id: str) -> list[dict]:
+    """Return ordered Erwägungen-paragraphs for a decision_id."""
+    conn = _get_structure_conn()
+    if not conn:
+        return []
+    try:
+        for did_variant in _decision_id_variants(decision_id) or [decision_id]:
+            rows = conn.execute(
+                "SELECT e_number, depth, parent, text FROM erwaegungen_paragraph "
+                "WHERE decision_id = ? ORDER BY depth, e_number",
+                (did_variant,),
+            ).fetchall()
+            if rows:
+                return [dict(r) for r in rows]
+        return []
+    finally:
+        conn.close()
+
+
+def _e_number_sort_key(e_number: str) -> tuple:
+    """Sort '1.10' after '1.9' (numeric, not lexicographic)."""
+    parts = e_number.split(".")
+    out = []
+    for p in parts:
+        try:
+            out.append(int(p))
+        except ValueError:
+            out.append(p)
+    return tuple(out)
+
+
+def _handle_get_decision_structure(*, decision_id: str, paragraph_excerpt_chars: int = 250) -> dict:
+    """Return structured fields (Sachverhalt / Erwägungen-paragraphs / Dispositiv / Regeste)."""
+    if not decision_id or not decision_id.strip():
+        return {"error": "Provide a decision_id."}
+    resolved = _resolve_decision_id(decision_id.strip())
+    row = _fetch_structure_row(resolved)
+    if not row:
+        return {
+            "error": f"Decision not in structure DB: {decision_id!r}",
+            "hint": (
+                "Structured extraction is currently available for federal decisions "
+                "(BGer / BVGer / BStGer / BGE / BPatGer / EGMR-CH / BGE-historical). "
+                "Cantonal decisions: use get_decision instead."
+            ),
+        }
+    paragraphs = _fetch_structure_paragraphs(resolved)
+    paragraphs.sort(key=lambda p: _e_number_sort_key(p["e_number"]))
+    out_paragraphs = []
+    for p in paragraphs:
+        text = p["text"] or ""
+        out_paragraphs.append({
+            "e_number": p["e_number"],
+            "depth": p["depth"],
+            "parent": p["parent"],
+            "text_chars": len(text),
+            "text_excerpt": text[:paragraph_excerpt_chars] + ("…" if len(text) > paragraph_excerpt_chars else ""),
+        })
+    sachverhalt = row.get("sachverhalt") or ""
+    dispositiv_orders = []
+    if row.get("dispositiv_orders"):
+        try:
+            dispositiv_orders = json.loads(row["dispositiv_orders"])
+        except json.JSONDecodeError:
+            dispositiv_orders = []
+    return {
+        "decision_id": row["decision_id"],
+        "court": row["court"],
+        "language": row["language"],
+        "decision_date": row["decision_date"],
+        "regeste": row.get("regeste"),
+        "sachverhalt_chars": len(sachverhalt),
+        "sachverhalt_excerpt": sachverhalt[:1000] + ("…" if len(sachverhalt) > 1000 else ""),
+        "erwaegungen_paragraph_count": row.get("erwaegungen_paragraph_count") or len(paragraphs),
+        "erwaegungen_paragraphs": out_paragraphs,
+        "dispositiv": row.get("dispositiv"),
+        "dispositiv_orders": dispositiv_orders,
+        "extraction_methods": {
+            "sachverhalt": row.get("sachverhalt_method"),
+            "erwaegungen": row.get("erwaegungen_method"),
+            "dispositiv": row.get("dispositiv_method"),
+        },
+        "_note": (
+            "Erwägungen-paragraphs are returned as excerpts; call get_erwaegung("
+            "decision_id, e_number) for the verbatim full text of a specific paragraph."
+        ),
+    }
+
+
+def _handle_get_erwaegung(*, decision_id: str, e_number: str) -> dict:
+    """Return verbatim text of a specific Erwägung paragraph."""
+    if not decision_id or not e_number:
+        return {"error": "Provide both decision_id and e_number (e.g. '2.3')."}
+    resolved = _resolve_decision_id(decision_id.strip())
+    e_clean = e_number.strip().lstrip("E.").strip()
+    paragraphs = _fetch_structure_paragraphs(resolved)
+    if not paragraphs:
+        return {"error": f"No structured Erwägungen found for {decision_id!r}."}
+    para_map = {p["e_number"]: p for p in paragraphs}
+    target = para_map.get(e_clean)
+    if not target:
+        # Sort siblings by numeric key for a useful error message
+        all_nums = sorted(para_map.keys(), key=_e_number_sort_key)
+        return {
+            "error": f"E. {e_clean!r} not found in {decision_id!r}.",
+            "available_e_numbers": all_nums,
+        }
+    # Find siblings (same parent)
+    parent = target["parent"]
+    siblings = sorted(
+        [p["e_number"] for p in paragraphs if p["parent"] == parent],
+        key=_e_number_sort_key,
+    )
+    row = _fetch_structure_row(resolved)
+    return {
+        "decision_id": row["decision_id"] if row else resolved,
+        "e_number": target["e_number"],
+        "depth": target["depth"],
+        "parent_e_number": target["parent"],
+        "siblings": siblings,
+        "court": row.get("court") if row else None,
+        "language": row.get("language") if row else None,
+        "regeste": row.get("regeste") if row else None,
+        "text": target["text"],
+        "_citation_format": (
+            f"{row['court'].upper()} {row.get('decision_date','')[:10]}, E. {target['e_number']}"
+            if row and row.get("court") else None
+        ),
+    }
+
+
+def _handle_get_regeste(*, decision_id: str) -> dict:
+    """Return the official BGer-/BVGer-/BStGer-formulated Regeste (head-note)."""
+    if not decision_id:
+        return {"error": "Provide a decision_id."}
+    resolved = _resolve_decision_id(decision_id.strip())
+    row = _fetch_structure_row(resolved)
+    if not row:
+        # Fallback: read from main decisions DB
+        decision = get_decision_by_id(resolved)
+        if not decision:
+            return {"error": f"Decision not found: {decision_id!r}"}
+        regeste = decision.get("regeste")
+        if not regeste:
+            return {
+                "decision_id": resolved,
+                "regeste": None,
+                "_note": "No Regeste field for this decision.",
+            }
+        return {
+            "decision_id": decision.get("decision_id"),
+            "court": decision.get("court"),
+            "decision_date": decision.get("decision_date"),
+            "language": decision.get("language"),
+            "regeste": regeste,
+            "_note": (
+                "Regeste from main decisions DB. The Regeste is the official "
+                "court-formulated summary of the legal rule and the canonical "
+                "citation target. References like '(E. 5.2.1)' inside the Regeste "
+                "point to specific Erwägungen — use get_erwaegung to retrieve them."
+            ),
+        }
+    return {
+        "decision_id": row["decision_id"],
+        "court": row["court"],
+        "decision_date": row["decision_date"],
+        "language": row["language"],
+        "regeste": row.get("regeste"),
+        "_note": (
+            "The Regeste is the official court-formulated summary of the legal "
+            "rule. References like '(E. 5.2.1)' inside the Regeste point to "
+            "specific Erwägungen — use get_erwaegung(decision_id, e_number) "
+            "to retrieve their verbatim text."
+        ),
+    }
+
+
 # ── get_case_brief and helpers ─────────────────────────────────
 
 
@@ -7497,25 +7804,55 @@ def _handle_get_case_brief(*, case: str) -> dict:
     full_text = decision.get("full_text") or ""
     regeste = decision.get("regeste") or ""
 
-    # Extract Sachverhalt (facts section)
-    sachverhalt = _extract_section(
-        full_text,
-        start_patterns=[r"^Sachverhalt\s*:", r"^A\.\s*[-–]", r"^Faits\s*:"],
-        end_patterns=[r"^Erwägungen\s*:?$", r"^Considérant\s*", r"^Das Bundesgericht"],
-        fallback_chars=800,
-    )
+    # Prefer the structured-extraction sidecar (much higher quality than the
+    # inline regex extractors). Fall back to inline if not available.
+    structure_row = _fetch_structure_row(decision_id)
+    structure_paragraphs = _fetch_structure_paragraphs(decision_id) if structure_row else []
+    used_structure = bool(structure_row)
 
-    # Extract key Erwägungen (numbered reasoning sections)
-    key_erwaegungen = _extract_erwaegungen(full_text)
-
-    # Extract Dispositiv (holding)
-    dispositiv = _extract_section(
-        full_text,
-        start_patterns=[r"^Dispositiv\s*:", r"^Aus diesen Gründen", r"^Par ces motifs"],
-        end_patterns=[],
-        fallback_chars=0,
-        from_end=True,
-    )
+    if structure_row:
+        sachverhalt = structure_row.get("sachverhalt") or _extract_section(
+            full_text,
+            start_patterns=[r"^Sachverhalt\s*:", r"^A\.\s*[-–]", r"^Faits\s*:"],
+            end_patterns=[r"^Erwägungen\s*:?$", r"^Considérant\s*", r"^Das Bundesgericht"],
+            fallback_chars=800,
+        )
+        if structure_paragraphs:
+            structure_paragraphs.sort(key=lambda p: _e_number_sort_key(p["e_number"]))
+            key_erwaegungen = [
+                {
+                    "e_number": p["e_number"],
+                    "depth": p["depth"],
+                    "text": (p["text"] or "")[:1200] + ("…" if len(p["text"] or "") > 1200 else ""),
+                }
+                for p in structure_paragraphs[:12]
+            ]
+        else:
+            key_erwaegungen = _extract_erwaegungen(full_text)
+        dispositiv = structure_row.get("dispositiv") or _extract_section(
+            full_text,
+            start_patterns=[r"^Dispositiv\s*:", r"^Aus diesen Gründen", r"^Par ces motifs"],
+            end_patterns=[],
+            fallback_chars=0,
+            from_end=True,
+        )
+        if not regeste and structure_row.get("regeste"):
+            regeste = structure_row["regeste"]
+    else:
+        sachverhalt = _extract_section(
+            full_text,
+            start_patterns=[r"^Sachverhalt\s*:", r"^A\.\s*[-–]", r"^Faits\s*:"],
+            end_patterns=[r"^Erwägungen\s*:?$", r"^Considérant\s*", r"^Das Bundesgericht"],
+            fallback_chars=800,
+        )
+        key_erwaegungen = _extract_erwaegungen(full_text)
+        dispositiv = _extract_section(
+            full_text,
+            start_patterns=[r"^Dispositiv\s*:", r"^Aus diesen Gründen", r"^Par ces motifs"],
+            end_patterns=[],
+            fallback_chars=0,
+            from_end=True,
+        )
 
     # Statutes from reference graph
     statutes = _get_decision_statutes(decision_id, limit=5)
@@ -7542,6 +7879,17 @@ def _handle_get_case_brief(*, case: str) -> dict:
             "outgoing_citations": outgoing,
         },
         "related": related,
+        "_extraction_quality": (
+            "structured (high)"
+            if used_structure
+            else "regex-fallback (lower)"
+        ),
+        "_hint": (
+            "For verbatim text of a specific Erwägung, call "
+            "get_erwaegung(decision_id, e_number)."
+            if used_structure
+            else None
+        ),
     }
 
 
@@ -8021,6 +8369,10 @@ def _handle_get_doctrine(*, query: str) -> dict:
     statute_refs = _extract_query_statute_refs(q)
     statute_info: dict = {}
     leading_cases: list[dict] = []
+    # Initialise outside the branch so the later regeste-relevance sort
+    # (which checks `if article and law_code:`) works in the concept path too.
+    article = ""
+    law_code = ""
 
     if statute_refs:
         # Statute path: pick the first parsed ref (prefer non-ABS variants)
@@ -8033,9 +8385,6 @@ def _handle_get_doctrine(*, query: str) -> dict:
         if len(parts) >= 3:
             article = parts[1]
             law_code = parts[-1]  # always last: "OR", "BV", etc.
-        else:
-            article = ""
-            law_code = ""
 
         # Fetch statute text from statutes.db
         if article and law_code:
@@ -10892,6 +11241,86 @@ def _list_tools() -> list[Tool]:
         ),
         Tool(
             annotations=_READ_ONLY,
+            name="get_decision_structure",
+            description=(
+                "Get the structured fields of a Swiss court decision: Sachverhalt (facts), "
+                "Erwägungen split into individually-citable numbered paragraphs ('1', '1.1', '2.3', "
+                "etc.), Dispositiv (operative ruling), and Regeste (official rule summary, BGE only). "
+                "Available for federal decisions (BGer/BVGer/BStGer/BGE/BPatGer/EGMR-CH); cantonal "
+                "courts: use get_decision instead. "
+                "USE THIS — not full_text — when the user asks 'what did the court rule', 'what is "
+                "the holding', or 'cite Erwägung X'. The structured fields are extracted "
+                "deterministically from the decision text, eliminating the holding/dicta confusion "
+                "that plagues raw-text reasoning. Returns paragraphs as excerpts; for verbatim full "
+                "text of a single Erwägung, follow up with get_erwaegung."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "decision_id": {
+                        "type": "string",
+                        "description": (
+                            "decision_id ('bger_5A_42_2026', 'bge_140 III 86'), "
+                            "BGE reference, or docket number."
+                        ),
+                    },
+                },
+                "required": ["decision_id"],
+            },
+        ),
+        Tool(
+            annotations=_READ_ONLY,
+            name="get_erwaegung",
+            description=(
+                "Get the verbatim full text of a SINGLE numbered Erwägung from a Swiss court "
+                "decision. This is the actual citable unit in Swiss legal practice — lawyers cite "
+                "'BGE 140 III 86 E. 2.3' to point at one specific paragraph of reasoning. "
+                "Use this when the user wants to quote, analyze, or verify a specific Erwägung "
+                "rather than the whole decision. Returns text + sibling Erwägung numbers for "
+                "navigation. e_number can be top-level ('1', '2') or sub-level ('1.1', '2.3.1')."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "decision_id": {
+                        "type": "string",
+                        "description": "decision_id, BGE reference, or docket number.",
+                    },
+                    "e_number": {
+                        "type": "string",
+                        "description": (
+                            "Erwägung number to retrieve (e.g. '2', '2.3', '5.2.1'). "
+                            "Leading 'E.' is stripped if present."
+                        ),
+                    },
+                },
+                "required": ["decision_id", "e_number"],
+            },
+        ),
+        Tool(
+            annotations=_READ_ONLY,
+            name="get_regeste",
+            description=(
+                "Get the official Regeste (head-note) of a Swiss court decision. The Regeste is "
+                "the court's own formulation of the legal rule established — for BGEs especially, "
+                "this is the canonical citation target. Often references specific Erwägungen via "
+                "'(E. 5.2.1)' which can then be retrieved verbatim with get_erwaegung. "
+                "USE THIS when the user asks 'what does this case stand for' or 'what is the rule "
+                "from this decision'. Available for ~54% of federal decisions (100% of BGE)."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "decision_id": {
+                        "type": "string",
+                        "description": "decision_id, BGE reference, or docket number.",
+                    },
+                },
+                "required": ["decision_id"],
+            },
+        ),
+        Tool(
+            annotations=_READ_ONLY,
             name="get_doctrine",
             description=(
                 "Get statute text + leading cases + doctrinal timeline + Federal Council Botschaft "
@@ -11446,7 +11875,7 @@ async def _handle_call_tool_inner(name: str, arguments: dict) -> list[TextConten
     _call_ua = _ctx_client_ua.get("")
     _call_sid = _ctx_session_id.get("")
     _is_commercial = bool(_call_ua) and not _KNOWN_FREE_CLIENTS.search(_call_ua)
-    _log_args = {k: v for k, v in arguments.items() if k in ("query", "decision_id", "case", "topic", "law_code", "abbreviation", "sr_number", "article", "court", "language", "date_from", "date_to", "canton", "chamber", "limit", "offset", "sort")}
+    _log_args = {k: v for k, v in arguments.items() if k in ("query", "decision_id", "case", "topic", "law_code", "abbreviation", "sr_number", "article", "court", "language", "date_from", "date_to", "canton", "chamber", "limit", "offset", "sort", "e_number")}
     logger.info("tool_call: %s %s [ip=%s ua=%s sid=%s commercial=%s]", name,
                 json.dumps(_log_args, ensure_ascii=False) if _log_args else "{}",
                 _call_ip or "-", _call_ua[:80] if _call_ua else "-", _call_sid[:12] if _call_sid else "-",
@@ -11669,6 +12098,28 @@ async def _handle_call_tool_inner(name: str, arguments: dict) -> list[TextConten
             result = await asyncio.to_thread(
                 _handle_get_case_brief,
                 case=arguments.get("case", ""),
+            )
+            return [TextContent(type="text", text=json.dumps(result, ensure_ascii=False, indent=2))]
+
+        elif name == "get_decision_structure":
+            result = await asyncio.to_thread(
+                _handle_get_decision_structure,
+                decision_id=arguments.get("decision_id", ""),
+            )
+            return [TextContent(type="text", text=json.dumps(result, ensure_ascii=False, indent=2))]
+
+        elif name == "get_erwaegung":
+            result = await asyncio.to_thread(
+                _handle_get_erwaegung,
+                decision_id=arguments.get("decision_id", ""),
+                e_number=arguments.get("e_number", ""),
+            )
+            return [TextContent(type="text", text=json.dumps(result, ensure_ascii=False, indent=2))]
+
+        elif name == "get_regeste":
+            result = await asyncio.to_thread(
+                _handle_get_regeste,
+                decision_id=arguments.get("decision_id", ""),
             )
             return [TextContent(type="text", text=json.dumps(result, ensure_ascii=False, indent=2))]
 
@@ -11900,7 +12351,6 @@ def main_remote(host: str, port: int):
     from mcp.server.sse import SseServerTransport
     from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
     from starlette.applications import Starlette
-    from starlette.requests import Request
     from starlette.responses import JSONResponse, Response
     from starlette.routing import Mount, Route
     import uvicorn

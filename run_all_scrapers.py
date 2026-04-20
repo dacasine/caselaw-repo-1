@@ -142,14 +142,28 @@ def run_single_scraper(court: str, timeout: int) -> dict:
     cmd = [sys.executable, str(REPO_DIR / "run_scraper.py"), court]
 
     try:
+        # Capture stderr so we can post-mortem any uncaught exception. Without
+        # this, scraper crashes show up as bare "Exit code 1" with no detail
+        # because run_scraper.py exceptions go to stderr, not the per-scraper
+        # log file.
         result = subprocess.run(
             cmd,
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
             timeout=timeout,
             cwd=str(REPO_DIR),
         )
         duration = time.time() - start
+        # On failure, append captured stderr to the scraper's log so the
+        # diagnosis is preserved alongside its INFO/WARNING records.
+        if result.returncode != 0 and result.stderr:
+            try:
+                with open(log_path, "ab") as f:
+                    f.write(b"\n--- subprocess stderr ---\n")
+                    f.write(result.stderr)
+                    f.write(b"\n--- end stderr ---\n")
+            except OSError:
+                pass
 
         # Parse only this run's appended log region:
         # [court] Done. +42 new, 1074/1102 (gap 28), Errors: 3, ...
@@ -160,6 +174,12 @@ def run_single_scraper(court: str, timeout: int) -> dict:
         our_count = None
         portal_count = None
         error_tail: deque[str] = deque(maxlen=6)
+        # Discovery-phase connection failures. The "Done." summary's
+        # "Errors: N" field only covers per-decision fetch errors; a scraper
+        # whose search/index pages all time out reports Errors: 0 because
+        # no fetch was ever attempted. Count connection/timeout errors
+        # separately to detect silent total failures.
+        discovery_errors = 0
         if log_path.exists():
             with open(log_path, "r", encoding="utf-8", errors="replace") as f:
                 if log_start > 0:
@@ -202,6 +222,13 @@ def run_single_scraper(court: str, timeout: int) -> dict:
                             pass
                     if " ERROR " in line or "Traceback" in line:
                         error_tail.append(line.strip())
+                    if (
+                        "ConnectTimeoutError" in line
+                        or "ConnectionError" in line
+                        or "Max retries exceeded" in line
+                        or ("Search page" in line and "failed" in line)
+                    ):
+                        discovery_errors += 1
 
         error = None
         note = None
@@ -214,6 +241,17 @@ def run_single_scraper(court: str, timeout: int) -> dict:
             error = f"{real_errors} scraping errors"
             if real_errors > 20 and real_errors > new_count:
                 failed = True
+
+        # Silent total failure: discovery pages all failed and no new decisions
+        # were found. Caught JU when its proxy was missing and every request
+        # to jurisprudence.jura.ch timed out — the old logic reported
+        # success=True because the "Done." summary said Errors: 0.
+        if discovery_errors >= 3 and new_count == 0:
+            failed = True
+            error = (
+                f"{discovery_errors} discovery-phase connection failures "
+                f"(portal unreachable)"
+            )
 
         # NoneReturns are expected for portals with a few broken entries.
         # Only flag as a note, not an error, unless excessive.
@@ -232,6 +270,7 @@ def run_single_scraper(court: str, timeout: int) -> dict:
             "skip_count": skip_count,
             "error_count": max(0, error_count - none_count),  # real errors only
             "none_count": none_count,
+            "discovery_errors": discovery_errors,
             "our_count": our_count,
             "portal_count": portal_count,
             "gap": gap,

@@ -15,7 +15,7 @@ dependencies = [
     "requests>=2.31",
     "beautifulsoup4>=4.12",
     "lxml>=4.9",
-    "playwright>=1.46",
+    "playwright>=1.58.0",
     "pydantic>=2.0",
     "pyarrow>=14.0",
     "huggingface-hub>=0.20",
@@ -23,10 +23,10 @@ dependencies = [
 
 [project.optional-dependencies]
 crypto = ["pycryptodome>=3.20"]
-pdf = ["pymupdf>=1.23"]
+pdf = ["pymupdf>=1.27.2.2"]
 api = ["fastapi>=0.104", "uvicorn>=0.24"]
-semantic = ["sentence-transformers>=3.0", "sqlite-vec>=0.1.6", "onnxruntime>=1.17"]
-dev = ["pytest>=7.0", "pytest-asyncio>=0.23", "ruff>=0.1"]
+semantic = ["sentence-transformers>=3.0", "sqlite-vec>=0.1.6", "onnxruntime>=1.24.3"]
+dev = ["pytest>=9.0.3", "pytest-asyncio>=1.3.0", "ruff>=0.1"]
 all = ["swiss-caselaw-scrapers[crypto,pdf,api,semantic,dev]"]
 
 [tool.setuptools.packages.find]
@@ -42,6 +42,10 @@ swiss-caselaw-gap-report = "coverage_report:main"
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 addopts = "-m \"not live and not manual\""
+# scripts/ holds ad-hoc diagnostic scripts (some named *_test.py or test_*.py)
+# that aren't pytest tests. Real tests live in tests/.
+testpaths = ["tests"]
+norecursedirs = ["scripts", "web_ui", "artifacts", "benchmarks", ".claude", ".superpowers"]
 markers = [
     "live: requires live network/system interaction; excluded from default pytest runs",
     "manual: diagnostic/manual test; excluded from default pytest runs",

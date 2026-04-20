@@ -244,6 +244,210 @@ def generate_stats(db_path: Path) -> dict:
     return stats
 
 
+_FEDERAL_COURT_EXCLUDE = (
+    'bger', 'bge', 'bvger', 'bstger', 'bpatger', 'bge_egmr', 'bge_historical',
+    'finma', 'finma_versicherungsrecht', 'weko', 'edoeb', 'ubi', 'elcom',
+    'postcom', 'comcom', 'ta_sst', 'emark', 'hudoc_ch', 'ch_bundesrat',
+    'ch_vb', 'sav_international', 'sav_kantone',
+)
+
+
+def _truncate(text: str | None, n: int = 220) -> str:
+    """Collapse whitespace, strip markup noise, and clip to n chars."""
+    if not text:
+        return ""
+    t = " ".join(str(text).split())
+    if len(t) <= n:
+        return t
+    return t[: n - 1].rstrip() + "…"
+
+
+def collect_recent_decisions(db_path: Path, per_group: int = 10) -> dict:
+    """Most recent BGE/BGer decisions and most recent cantonal decisions.
+
+    Returns {"bge": [...], "cantonal": [...]} with fields for dashboard rendering.
+    """
+    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    conn.row_factory = sqlite3.Row
+    today_iso = datetime.now(timezone.utc).date().isoformat()
+    try:
+        bge_rows = conn.execute(
+            """
+            SELECT decision_id, docket_number, decision_date, court, language,
+                   regeste, title
+            FROM decisions
+            WHERE court IN ('bger','bge')
+              AND decision_date IS NOT NULL
+              AND decision_date != ''
+              AND decision_date <= ?
+              AND length(full_text) > 500
+              AND full_text NOT LIKE '%Document Dienstes ist fehlgeschlagen%'
+            ORDER BY decision_date DESC, decision_id DESC
+            LIMIT ?
+            """,
+            (today_iso, per_group),
+        ).fetchall()
+
+        placeholders = ",".join("?" * len(_FEDERAL_COURT_EXCLUDE))
+        cantonal_rows = conn.execute(
+            f"""
+            SELECT decision_id, docket_number, decision_date, court, canton,
+                   language, regeste, title
+            FROM decisions
+            WHERE court NOT IN ({placeholders})
+              AND canton != 'CH'
+              AND decision_date IS NOT NULL
+              AND decision_date != ''
+              AND decision_date <= ?
+              AND regeste IS NOT NULL
+              AND length(regeste) > 20
+              AND length(full_text) > 500
+            ORDER BY decision_date DESC, decision_id DESC
+            LIMIT ?
+            """,
+            (*_FEDERAL_COURT_EXCLUDE, today_iso, per_group),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    def _shape(r, include_canton=False):
+        summary = _truncate(r["regeste"] or r["title"])
+        out = {
+            "decision_id": r["decision_id"],
+            "docket": r["docket_number"] or "",
+            "date": r["decision_date"],
+            "court": r["court"],
+            "language": r["language"],
+            "summary": summary,
+        }
+        if include_canton:
+            out["canton"] = r["canton"]
+        return out
+
+    return {
+        "bge": [_shape(r) for r in bge_rows],
+        "cantonal": [_shape(r, include_canton=True) for r in cantonal_rows],
+    }
+
+
+def collect_upcoming_amendments(limit: int = 20, timeout: int = 60) -> list[dict]:
+    """Query Fedlex SPARQL for statute consolidations with dateApplicability > today.
+
+    Returns up to `limit` upcoming amendments shaped for dashboard rendering.
+    Returns [] on any failure — the section simply won't render.
+    """
+    # Upcoming consolidations — shape of the SPARQL kept simple: first fetch
+    # sr/date pairs with future dateApplicability, then fetch titles in a
+    # second query. The Fedlex title relation is indirect (through expressions)
+    # and the combined query times out with OPTIONAL joins.
+    query = """
+    PREFIX jolux: <http://data.legilux.public.lu/resource/ontology/jolux#>
+
+    SELECT DISTINCT ?work ?srNumber ?date WHERE {
+      ?work a jolux:ConsolidationAbstract .
+      ?work jolux:historicalLegalId ?srNumber .
+      ?consolidation jolux:isMemberOf ?work .
+      ?consolidation jolux:dateApplicability ?date .
+      FILTER(?date > NOW())
+    }
+    ORDER BY ASC(?date)
+    LIMIT %d
+    """ % int(limit * 4)
+
+    try:
+        import requests
+        resp = requests.post(
+            "https://fedlex.data.admin.ch/sparqlendpoint",
+            data={"query": query},
+            headers={
+                "Accept": "application/sparql-results+json",
+                "Content-Type": "application/x-www-form-urlencoded",
+                "User-Agent": "OpenCaseLaw/1.0 (+https://opencaselaw.ch)",
+            },
+            timeout=timeout,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as e:
+        logger.warning(f"Fedlex upcoming-amendments query failed: {e}")
+        return []
+
+    seen = set()
+    work_uris = {}
+    out = []
+    for b in data.get("results", {}).get("bindings", []):
+        sr = b.get("srNumber", {}).get("value", "")
+        date = b.get("date", {}).get("value", "")
+        work = b.get("work", {}).get("value", "")
+        if not sr or not date:
+            continue
+        date = date[:10]
+        key = (sr, date)
+        if key in seen:
+            continue
+        seen.add(key)
+        fedlex_url = work.replace(
+            "https://fedlex.data.admin.ch/eli/",
+            "https://www.fedlex.admin.ch/eli/",
+        ) if work.startswith("https://fedlex.data.admin.ch/eli/") else ""
+        entry = {
+            "sr_number": sr,
+            "in_force_date": date,
+            "title_de": "",
+            "title_fr": "",
+            "title_it": "",
+            "url": fedlex_url,
+        }
+        out.append(entry)
+        if work:
+            work_uris.setdefault(work, entry)
+        if len(out) >= limit:
+            break
+
+    # Second query: fetch titles via expression (title is on ?expr keyed by language).
+    LANG_URIS = {
+        "de": "http://publications.europa.eu/resource/authority/language/DEU",
+        "fr": "http://publications.europa.eu/resource/authority/language/FRA",
+        "it": "http://publications.europa.eu/resource/authority/language/ITA",
+    }
+    if work_uris:
+        values = " ".join(f"<{u}>" for u in work_uris)
+        for lang, lang_uri in LANG_URIS.items():
+            title_q = f"""
+            PREFIX jolux: <http://data.legilux.public.lu/resource/ontology/jolux#>
+
+            SELECT ?work ?title WHERE {{
+              VALUES ?work {{ {values} }}
+              ?work jolux:isRealizedBy ?expr .
+              ?expr jolux:language <{lang_uri}> .
+              ?expr jolux:title ?title .
+            }}
+            """
+            try:
+                resp = requests.post(
+                    "https://fedlex.data.admin.ch/sparqlendpoint",
+                    data={"query": title_q},
+                    headers={
+                        "Accept": "application/sparql-results+json",
+                        "Content-Type": "application/x-www-form-urlencoded",
+                        "User-Agent": "OpenCaseLaw/1.0 (+https://opencaselaw.ch)",
+                    },
+                    timeout=timeout,
+                )
+                resp.raise_for_status()
+                tdata = resp.json()
+                for b in tdata.get("results", {}).get("bindings", []):
+                    w = b.get("work", {}).get("value", "")
+                    val = b.get("title", {}).get("value", "")
+                    entry = work_uris.get(w)
+                    if entry and val and not entry.get(f"title_{lang}"):
+                        entry[f"title_{lang}"] = val
+            except Exception as e:
+                logger.warning(f"Fedlex title lookup failed ({lang}): {e}")
+
+    return out
+
+
 def collect_corpus_snapshot(repo_dir: Path) -> dict:
     """Count federal laws, cantonal laws, commentaries, citation graph size.
 
@@ -650,13 +854,80 @@ def main():
     if traffic:
         stats["traffic"] = traffic
 
-    # ── Compute deltas vs previous stats.json ──
+    # ── Recent decisions (BGE/BGer + cantonal) for dashboard "Latest" block ──
+    try:
+        stats["recent"] = collect_recent_decisions(db_path, per_group=10)
+    except Exception as e:
+        logger.warning(f"collect_recent_decisions failed: {e}")
+
+    # ── Upcoming federal statute revisions (Fedlex SPARQL) ──
+    try:
+        upcoming = collect_upcoming_amendments(limit=15)
+        if upcoming:
+            stats["upcoming_amendments"] = upcoming
+    except Exception as e:
+        logger.warning(f"collect_upcoming_amendments failed: {e}")
+
+    # ── Compute deltas vs a stats snapshot from a previous day ──
+    # Using the file currently on disk breaks intra-day re-runs (second run
+    # compares to the first run of the same day and shows delta=0). Instead,
+    # pick the most recent git-tracked revision of stats.json whose
+    # generated_at is on an earlier calendar day.
     prev = {}
-    if output_path.exists():
+    today_iso = datetime.now(timezone.utc).date().isoformat()
+
+    # Try git history first — walk commits and pick the first one from an
+    # earlier day.
+    try:
+        import subprocess
+        # Resolve the output path relative to the repo (handle abs paths or
+        # paths that don't sit inside repo_dir cleanly).
+        try:
+            rel_path = output_path.resolve().relative_to(repo_dir.resolve())
+        except ValueError:
+            # Fall back to a sensible default path inside the repo.
+            rel_path = Path("docs/stats.json")
+        result = subprocess.run(
+            ["git", "-C", str(repo_dir), "log", "--pretty=%H",
+             "-n", "14", "--", str(rel_path)],
+            capture_output=True, text=True, timeout=15,
+        )
+        if result.returncode == 0:
+            for commit_hash in result.stdout.strip().split("\n"):
+                if not commit_hash:
+                    continue
+                show = subprocess.run(
+                    ["git", "-C", str(repo_dir), "show",
+                     f"{commit_hash}:{rel_path}"],
+                    capture_output=True, text=True, timeout=15,
+                )
+                if show.returncode != 0:
+                    continue
+                try:
+                    candidate = json.loads(show.stdout)
+                except json.JSONDecodeError:
+                    continue
+                cand_ts = candidate.get("generated_at", "")
+                cand_date = cand_ts[:10] if cand_ts else ""
+                if cand_date and cand_date < today_iso:
+                    prev = candidate
+                    logger.info(
+                        f"Loaded stats.json from commit {commit_hash[:8]} "
+                        f"(generated {cand_ts}) for delta computation"
+                    )
+                    break
+    except Exception as e:
+        logger.warning(f"Git history lookup failed: {e}")
+
+    # Fallback: current file on disk — but only if its date is earlier.
+    if not prev and output_path.exists():
         try:
             with open(output_path, "r", encoding="utf-8") as f:
-                prev = json.load(f)
-            logger.info("Loaded previous stats.json for delta computation")
+                candidate = json.load(f)
+            cand_date = candidate.get("generated_at", "")[:10]
+            if cand_date and cand_date < today_iso:
+                prev = candidate
+                logger.info("Using current stats.json on disk (earlier date) for delta")
         except Exception as e:
             logger.warning(f"Could not load previous stats.json: {e}")
 
