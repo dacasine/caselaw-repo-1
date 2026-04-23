@@ -5,8 +5,7 @@ Runs, in order:
     2. validity_propagation.propagate         (validity_status from Phase 5)
     3. pagerank.populate_pagerank             (time-decayed PageRank)
 
-Then prints a summary. Idempotent — safe to re-run after each enrichment
-wave.
+Reads CASELAW_PG_URL from environment. Idempotent.
 
 Usage:
     .venv/bin/python scripts/parag/compute_authority.py [--skip-pagerank]
@@ -22,23 +21,19 @@ from time import monotonic
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from db_schema_parag import DEFAULT_PARAG_DB, init_parag_schema
 from search_stack.parag import authority, pagerank, validity_propagation
+from search_stack.parag.pg_conn import get_conn, get_pg_url
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--parag-db", type=Path, default=DEFAULT_PARAG_DB)
-    ap.add_argument("--skip-pagerank", action="store_true",
-                    help="Skip the time-decayed PageRank step (useful for "
-                         "quick refreshes when reference_graph.db hasn't "
-                         "changed)")
+    ap.add_argument("--skip-pagerank", action="store_true")
     ap.add_argument("--skip-authority", action="store_true")
     ap.add_argument("--skip-validity", action="store_true")
     args = ap.parse_args()
 
-    conn = init_parag_schema(args.parag_db)
-
+    print(f"Postgres : {get_pg_url().split('@')[-1]}", flush=True)
+    conn = get_conn()
     report: dict[str, object] = {}
 
     if not args.skip_authority:

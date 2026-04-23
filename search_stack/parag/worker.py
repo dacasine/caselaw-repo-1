@@ -10,12 +10,12 @@ under the synthetic.new quota regardless of worker count.
 
 from __future__ import annotations
 
-import sqlite3
 import sys
-import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+
+from psycopg_pool import ConnectionPool
 
 from db_schema_parag import PROMPT_VERSION
 from search_stack.parag.llm_client import SyntheticClient
@@ -54,19 +54,18 @@ class ProcessResult:
 def process_decision(
     row: DecisionRow,
     *,
-    parag_conn: sqlite3.Connection,
-    parag_lock: threading.Lock,
+    pool: ConnectionPool,
     client: SyntheticClient,
     force: bool = False,
 ) -> ProcessResult:
-    """Process one decision end-to-end. Thread-safe via `parag_lock`
-    around DB writes (SQLite is single-writer)."""
+    """Process one decision end-to-end. Thread-safe: each DB operation
+    borrows its own connection from the pool (Postgres handles concurrency)."""
     t0 = time.monotonic()
     src_hash = source_hash(row.full_text or "")
 
     if not force:
-        with parag_lock:
-            if should_skip(parag_conn, row.decision_id, src_hash, PROMPT_VERSION):
+        with pool.connection() as conn:
+            if should_skip(conn, row.decision_id, src_hash, PROMPT_VERSION):
                 return ProcessResult(row.decision_id, "skipped",
                                      latency_s=time.monotonic() - t0)
 
@@ -80,9 +79,9 @@ def process_decision(
     stats = BuildStats()
     if not chunks:
         # Empty: record state so we don't revisit.
-        with parag_lock:
+        with pool.connection() as conn:
             upsert_state(
-                parag_conn,
+                conn,
                 decision_id=row.decision_id,
                 court=row.court,
                 parser_name=parsed.parser_name,
@@ -91,7 +90,7 @@ def process_decision(
                 prompt_version=PROMPT_VERSION,
                 status="empty",
             )
-            parag_conn.commit()
+            conn.commit()
         return ProcessResult(row.decision_id, "empty", stats=stats,
                              latency_s=time.monotonic() - t0)
 
@@ -100,10 +99,10 @@ def process_decision(
     except Exception as exc:
         # Persist chunks we have anyway (without summaries) so parser
         # output isn't lost on LLM outage.
-        with parag_lock:
-            upsert_chunks(parag_conn, chunks, PROMPT_VERSION)
+        with pool.connection() as conn:
+            upsert_chunks(conn, chunks, PROMPT_VERSION)
             upsert_state(
-                parag_conn,
+                conn,
                 decision_id=row.decision_id,
                 court=row.court,
                 parser_name=parsed.parser_name,
@@ -113,15 +112,15 @@ def process_decision(
                 status="error",
                 error_message=f"summaries: {exc}",
             )
-            parag_conn.commit()
+            conn.commit()
         return ProcessResult(row.decision_id, "error", stats=stats,
                              error=f"summaries: {exc}",
                              latency_s=time.monotonic() - t0)
 
-    with parag_lock:
-        upsert_chunks(parag_conn, chunks, PROMPT_VERSION)
+    with pool.connection() as conn:
+        upsert_chunks(conn, chunks, PROMPT_VERSION)
         upsert_state(
-            parag_conn,
+            conn,
             decision_id=row.decision_id,
             court=row.court,
             parser_name=parsed.parser_name,
@@ -130,7 +129,7 @@ def process_decision(
             prompt_version=PROMPT_VERSION,
             status="ok",
         )
-        parag_conn.commit()
+        conn.commit()
 
     return ProcessResult(row.decision_id, "ok", stats=stats,
                          latency_s=time.monotonic() - t0)
@@ -139,14 +138,13 @@ def process_decision(
 def run_many(
     rows: list[DecisionRow],
     *,
-    parag_conn: sqlite3.Connection,
+    pool: ConnectionPool,
     client: SyntheticClient,
     n_workers: int = 4,
     progress_every: int = 25,
     force: bool = False,
 ) -> dict:
     """Thread-pool orchestrator. Returns aggregate statistics dict."""
-    parag_lock = threading.Lock()
     agg = {
         "total": len(rows),
         "ok": 0,
@@ -164,14 +162,13 @@ def run_many(
     def work(row: DecisionRow) -> ProcessResult:
         return process_decision(
             row,
-            parag_conn=parag_conn,
-            parag_lock=parag_lock,
+            pool=pool,
             client=client,
             force=force,
         )
 
-    with ThreadPoolExecutor(max_workers=n_workers) as pool:
-        futures = [pool.submit(work, r) for r in rows]
+    with ThreadPoolExecutor(max_workers=n_workers) as executor:
+        futures = [executor.submit(work, r) for r in rows]
         done = 0
         for fut in as_completed(futures):
             r = fut.result()

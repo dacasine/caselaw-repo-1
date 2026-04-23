@@ -20,8 +20,8 @@ CREATE TABLE IF NOT EXISTS chunks (
     created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
 
     fts tsvector GENERATED ALWAYS AS (
-        setweight(to_tsvector('simple', unaccent(COALESCE(summary, ''))), 'A') ||
-        setweight(to_tsvector('simple', unaccent(COALESCE(cleaned, ''))), 'B')
+        setweight(to_tsvector('simple', immutable_unaccent(COALESCE(summary, ''))), 'A') ||
+        setweight(to_tsvector('simple', immutable_unaccent(COALESCE(cleaned, ''))), 'B')
     ) STORED,
 
     UNIQUE (decision_id, considerant_number, span_start)

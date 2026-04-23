@@ -218,8 +218,15 @@ def build_user_prompt(ctx: DecisionContext, *, light: bool = False,
 # Output schema validation
 # ---------------------------------------------------------------------------
 
-OUTCOMES = {"admission", "admission_partielle", "rejet", "irrecevabilite"}
-STAGES = {"recours", "premiere_instance"}
+OUTCOMES = {
+    "admission", "admission_partielle", "rejet", "irrecevabilite",
+    "radiation", "classement", "dessaisissement", "renvoi",
+    "non_entree_en_matiere", "neutral", "partiel",
+}
+STAGES = {
+    "recours", "premiere_instance", "appel", "revision",
+    "opposition", "reconsideration", "unique_instance",
+}
 DIRECTIONS = {"confirms", "develops", "distinguishes", "overrules", "criticizes", "neutral"}
 
 

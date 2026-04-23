@@ -2,16 +2,15 @@
 
 -- Federal laws (Fedlex)
 CREATE TABLE IF NOT EXISTS laws_federal (
-    sr_number   TEXT PRIMARY KEY,
-    title_de    TEXT,
-    title_fr    TEXT,
-    title_it    TEXT,
-    abbr_de     TEXT,
-    abbr_fr     TEXT,
-    abbr_it     TEXT,
-    url_de      TEXT,
-    url_fr      TEXT,
-    url_it      TEXT
+    sr_number           TEXT PRIMARY KEY,
+    title_de            TEXT,
+    title_fr            TEXT,
+    title_it            TEXT,
+    abbr_de             TEXT,
+    abbr_fr             TEXT,
+    abbr_it             TEXT,
+    consolidation_date  TEXT,
+    work_uri            TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_lawsfed_abbr_de ON laws_federal (abbr_de);
@@ -22,15 +21,16 @@ CREATE INDEX IF NOT EXISTS idx_lawsfed_abbr_it ON laws_federal (abbr_it);
 CREATE TABLE IF NOT EXISTS articles_federal (
     id          BIGSERIAL PRIMARY KEY,
     sr_number   TEXT NOT NULL,
-    language    TEXT NOT NULL,
+    lang        TEXT NOT NULL,
     article_num TEXT NOT NULL,
     heading     TEXT,
+    footnote    TEXT,
     text        TEXT NOT NULL,
     fts tsvector GENERATED ALWAYS AS (
-        setweight(to_tsvector('simple', unaccent(COALESCE(heading, ''))), 'A') ||
-        setweight(to_tsvector('simple', unaccent(COALESCE(text,    ''))), 'B')
+        setweight(to_tsvector('simple', immutable_unaccent(COALESCE(heading, ''))), 'A') ||
+        setweight(to_tsvector('simple', immutable_unaccent(COALESCE(text,    ''))), 'B')
     ) STORED,
-    UNIQUE (sr_number, language, article_num),
+    UNIQUE (sr_number, lang, article_num),
     FOREIGN KEY (sr_number) REFERENCES laws_federal(sr_number) ON DELETE CASCADE
 );
 
@@ -72,8 +72,8 @@ CREATE TABLE IF NOT EXISTS articles_cantonal (
     heading     TEXT,
     text        TEXT   NOT NULL,
     fts tsvector GENERATED ALWAYS AS (
-        setweight(to_tsvector('simple', unaccent(COALESCE(heading, ''))), 'A') ||
-        setweight(to_tsvector('simple', unaccent(COALESCE(text,    ''))), 'B')
+        setweight(to_tsvector('simple', immutable_unaccent(COALESCE(heading, ''))), 'A') ||
+        setweight(to_tsvector('simple', immutable_unaccent(COALESCE(text,    ''))), 'B')
     ) STORED,
     FOREIGN KEY (lexfind_id, language) REFERENCES laws_cantonal(lexfind_id, language) ON DELETE CASCADE
 );

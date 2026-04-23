@@ -168,7 +168,13 @@ TABLE_SPECS: list[TableSpec] = [
     TableSpec(
         name="enrichment_state",
         source_db="parag_chunks.db",
-        source_query="SELECT * FROM enrichment_state",
+        source_query="""
+            SELECT decision_id, court, parser_name, fallback_used,
+                   n_chunks, n_stubs, n_self_suff, n_summarized, n_errors,
+                   llm_calls, llm_latency_s, prompt_tokens, completion_tokens,
+                   source_hash, prompt_version, status, error_message, processed_at
+            FROM enrichment_state
+        """,
         pg_columns=[
             "decision_id", "court", "parser_name", "fallback_used",
             "n_chunks", "n_stubs", "n_self_suff", "n_summarized", "n_errors",
@@ -186,17 +192,17 @@ TABLE_SPECS: list[TableSpec] = [
     TableSpec(
         name="laws_federal",
         source_db="statutes.db",
-        source_query="SELECT sr_number, title_de, title_fr, title_it, abbr_de, abbr_fr, abbr_it, url_de, url_fr, url_it FROM laws",
-        pg_columns=["sr_number","title_de","title_fr","title_it","abbr_de","abbr_fr","abbr_it","url_de","url_fr","url_it"],
+        source_query="SELECT sr_number, title_de, title_fr, title_it, abbr_de, abbr_fr, abbr_it, consolidation_date, work_uri FROM laws",
+        pg_columns=["sr_number","title_de","title_fr","title_it","abbr_de","abbr_fr","abbr_it","consolidation_date","work_uri"],
         upsert_key=["sr_number"],
     ),
 
     TableSpec(
         name="articles_federal",
         source_db="statutes.db",
-        source_query="SELECT sr_number, language, article_num, heading, text FROM articles",
-        pg_columns=["sr_number","language","article_num","heading","text"],
-        upsert_key=None,  # UNIQUE constraint catches duplicates on re-run
+        source_query="SELECT sr_number, lang, article_num, heading, footnote, text FROM articles",
+        pg_columns=["sr_number","lang","article_num","heading","footnote","text"],
+        upsert_key=None,
     ),
 
     # ── cantonal_laws.db → laws_cantonal + articles_cantonal ─────────
@@ -226,23 +232,41 @@ TABLE_SPECS: list[TableSpec] = [
     ),
 
     # ── reference_graph.db → decision_citations + decision_statutes ──
+    # NOTE: SQLite schema differs significantly from Postgres target.
+    # SQLite decision_citations: (source_decision_id, target_ref, target_type, mention_count, is_prior_instance)
+    # SQLite citation_targets: (source_decision_id, target_ref, target_decision_id, match_type, confidence_score)
+    # We JOIN to get resolved target_decision_id + confidence.
     TableSpec(
         name="decision_citations",
         source_db="reference_graph.db",
         source_query="""
-            SELECT source_decision_id, target_decision_id, raw_text,
-                   confidence_score, resolution_method, citing_date
-            FROM decision_citations
+            SELECT dc.source_decision_id,
+                   COALESCE(ct.target_decision_id, dc.target_ref) AS target_decision_id,
+                   dc.target_ref AS raw_text,
+                   ct.confidence_score,
+                   COALESCE(ct.match_type, dc.target_type) AS resolution_method,
+                   NULL AS citing_date
+            FROM decision_citations dc
+            LEFT JOIN citation_targets ct
+                ON dc.source_decision_id = ct.source_decision_id
+               AND dc.target_ref = ct.target_ref
         """,
         pg_columns=["source_decision_id","target_decision_id","raw_text","confidence_score","resolution_method","citing_date"],
         upsert_key=["source_decision_id","target_decision_id"],
     ),
 
+    # SQLite decision_statutes: (decision_id, statute_id, mention_count)
+    # statute_id is a compound key like "SR_220" or "ART.41.OR" — split where possible.
     TableSpec(
         name="decision_statutes",
         source_db="reference_graph.db",
         source_query="""
-            SELECT source_decision_id, sr_number, article_num, paragraph, raw_text, n_mentions
+            SELECT decision_id AS source_decision_id,
+                   statute_id AS sr_number,
+                   '' AS article_num,
+                   '' AS paragraph,
+                   statute_id AS raw_text,
+                   mention_count AS n_mentions
             FROM decision_statutes
         """,
         pg_columns=["source_decision_id","sr_number","article_num","paragraph","raw_text","n_mentions"],
@@ -256,13 +280,43 @@ TABLE_SPECS: list[TableSpec] = [
 # ---------------------------------------------------------------------------
 
 def _open_sqlite(path: Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(f"file:{path}?mode=ro&immutable=1", uri=True)
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    conn.execute("PRAGMA busy_timeout = 30000")
     conn.row_factory = sqlite3.Row
     return conn
 
 
+def _clean_row(row: tuple, columns: list[str]) -> tuple:
+    """Normalise SQLite values for Postgres: empty strings → None for
+    date/timestamp columns, ensure json_data is valid JSON or None."""
+    DATE_COLS = {"decision_date", "publication_date", "scraped_at",
+                 "created_at", "encoded_at", "processed_at", "computed_at",
+                 "fetched_at", "version_active_since", "citing_date"}
+    BOOL_COLS = {"atf_published", "is_active", "resolved"}
+    result = list(row)
+    for i, val in enumerate(result):
+        if isinstance(val, str) and ("\x00" in val or "\\u0000" in val):
+            result[i] = val.replace("\x00", "").replace("\\u0000", "")
+    for i, (val, col) in enumerate(zip(result, columns)):
+        if col in DATE_COLS and isinstance(val, str):
+            stripped = val.strip()
+            if stripped == "" or stripped.startswith("0000"):
+                result[i] = None
+            elif "." in stripped and len(stripped) == 10:
+                parts = stripped.split(".")
+                if len(parts) == 3 and len(parts[2]) == 4:
+                    result[i] = f"{parts[2]}-{parts[1]}-{parts[0]}"
+        elif col == "json_data" and isinstance(val, str):
+            if val.strip() == "":
+                result[i] = None
+        elif col in BOOL_COLS and isinstance(val, int):
+            result[i] = bool(val)
+    return tuple(result)
+
+
 def _iter_rows(
-    conn: sqlite3.Connection, query: str, batch: int = BATCH_SIZE
+    conn: sqlite3.Connection, query: str, columns: list[str] | None = None,
+    batch: int = BATCH_SIZE,
 ) -> Iterator[list[tuple]]:
     """Yield lists of tuples, batch_size each, to avoid memory blowup."""
     cursor = conn.cursor()
@@ -271,7 +325,10 @@ def _iter_rows(
         rows = cursor.fetchmany(batch)
         if not rows:
             break
-        yield [tuple(r) for r in rows]
+        if columns:
+            yield [_clean_row(tuple(r), columns) for r in rows]
+        else:
+            yield [tuple(r) for r in rows]
 
 
 # ---------------------------------------------------------------------------
@@ -288,7 +345,7 @@ def _ensure_staging_unique_constraint(pg: psycopg.Connection, spec: TableSpec) -
 
 def _conflict_clause(spec: TableSpec) -> sql.Composable:
     if not spec.upsert_key:
-        return sql.SQL("")
+        return sql.SQL("ON CONFLICT DO NOTHING")
     target = sql.SQL(", ").join(sql.Identifier(k) for k in spec.upsert_key)
     set_cols = [c for c in spec.pg_columns if c not in spec.upsert_key]
     if not set_cols:
@@ -331,6 +388,7 @@ def _copy_via_staging(
     chunks, citation graph."""
     staging = f"_staging_{spec.name}"
     with pg.cursor() as cur:
+        cur.execute(sql.SQL("DROP TABLE IF EXISTS {}").format(sql.Identifier(staging)))
         cur.execute(
             sql.SQL("CREATE TEMP TABLE {} (LIKE {} INCLUDING DEFAULTS)").format(
                 sql.Identifier(staging), sql.Identifier(spec.name)
@@ -442,7 +500,7 @@ def migrate_chunk_citations(
         INSERT INTO chunk_law_citations
             (chunk_id, sr_number, law_abbr, article_num, paragraph, letter,
              raw_text, normalized, source, resolved)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::boolean)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::int::boolean)
     """
     buf: list[tuple] = []
     n_law = 0
@@ -504,7 +562,7 @@ def run_spec(
     log.info("▶ %s  (from %s)", spec.name, spec.source_db)
     t0 = time.monotonic()
     with _open_sqlite(src_path) as sconn:
-        rows = _iter_rows(sconn, spec.source_query)
+        rows = _iter_rows(sconn, spec.source_query, columns=spec.pg_columns)
         if use_staging and not spec.upsert_key:
             # plain INSERT, fastest path
             n = _copy_via_staging(pg, spec, rows)

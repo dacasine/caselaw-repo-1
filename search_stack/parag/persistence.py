@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import hashlib
-import sqlite3
+
+import psycopg
 
 from search_stack.parag.sac_builder import BuildStats, Chunk
 
@@ -17,7 +18,7 @@ def source_hash(full_text: str) -> str:
 
 
 def upsert_chunks(
-    conn: sqlite3.Connection,
+    conn: psycopg.Connection,
     chunks: list[Chunk],
     prompt_version: int,
 ) -> None:
@@ -30,7 +31,7 @@ def upsert_chunks(
     cur = conn.cursor()
     # Clear previous chunks for these decisions.
     cur.executemany(
-        "DELETE FROM chunks WHERE decision_id = ?",
+        "DELETE FROM chunks WHERE decision_id = %s",
         [(d,) for d in decision_ids],
     )
     cur.executemany(
@@ -40,7 +41,7 @@ def upsert_chunks(
             span_start, span_end, raw_length, cleaned, summary,
             summary_source, chunk_hash, prompt_version
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
         [
             (
@@ -64,7 +65,7 @@ def upsert_chunks(
 
 
 def upsert_state(
-    conn: sqlite3.Connection,
+    conn: psycopg.Connection,
     *,
     decision_id: str,
     court: str,
@@ -83,25 +84,25 @@ def upsert_state(
             llm_calls, llm_latency_s, prompt_tokens, completion_tokens,
             source_hash, prompt_version, status, error_message, processed_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())
         ON CONFLICT(decision_id) DO UPDATE SET
-            court            = excluded.court,
-            parser_name      = excluded.parser_name,
-            fallback_used    = excluded.fallback_used,
-            n_chunks         = excluded.n_chunks,
-            n_stubs          = excluded.n_stubs,
-            n_self_suff      = excluded.n_self_suff,
-            n_summarized     = excluded.n_summarized,
-            n_errors         = excluded.n_errors,
-            llm_calls        = excluded.llm_calls,
-            llm_latency_s    = excluded.llm_latency_s,
-            prompt_tokens    = excluded.prompt_tokens,
-            completion_tokens= excluded.completion_tokens,
-            source_hash      = excluded.source_hash,
-            prompt_version   = excluded.prompt_version,
-            status           = excluded.status,
-            error_message    = excluded.error_message,
-            processed_at     = datetime('now')
+            court            = EXCLUDED.court,
+            parser_name      = EXCLUDED.parser_name,
+            fallback_used    = EXCLUDED.fallback_used,
+            n_chunks         = EXCLUDED.n_chunks,
+            n_stubs          = EXCLUDED.n_stubs,
+            n_self_suff      = EXCLUDED.n_self_suff,
+            n_summarized     = EXCLUDED.n_summarized,
+            n_errors         = EXCLUDED.n_errors,
+            llm_calls        = EXCLUDED.llm_calls,
+            llm_latency_s    = EXCLUDED.llm_latency_s,
+            prompt_tokens    = EXCLUDED.prompt_tokens,
+            completion_tokens= EXCLUDED.completion_tokens,
+            source_hash      = EXCLUDED.source_hash,
+            prompt_version   = EXCLUDED.prompt_version,
+            status           = EXCLUDED.status,
+            error_message    = EXCLUDED.error_message,
+            processed_at     = now()
         """,
         (
             decision_id,
@@ -126,7 +127,7 @@ def upsert_state(
 
 
 def should_skip(
-    conn: sqlite3.Connection,
+    conn: psycopg.Connection,
     decision_id: str,
     src_hash: str,
     prompt_version: int,
@@ -135,7 +136,7 @@ def should_skip(
     with the same source hash and prompt version."""
     row = conn.execute(
         "SELECT source_hash, prompt_version, status FROM enrichment_state "
-        "WHERE decision_id = ?",
+        "WHERE decision_id = %s",
         (decision_id,),
     ).fetchone()
     if row is None:

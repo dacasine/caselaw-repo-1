@@ -1,4 +1,4 @@
-"""BGE-M3 embedder + sqlite-vec persistence for PA-RAG Phase 4.
+"""BGE-M3 embedder + pgvector persistence for PA-RAG Phase 4.
 
 Why BGE-M3 (not Longformer Swiss)
 ---------------------------------
@@ -18,17 +18,14 @@ matches both the contextual header and the raw content.
 
 Storage
 -------
-- `vec_chunks` : sqlite-vec virtual table with float[1024] embeddings,
-                 keyed by chunks.id (integer rowid).
-- `chunk_embeddings_meta` : regular table tracking model + version per
-                             chunk, so model upgrades can re-encode
-                             incrementally.
+- `chunk_embeddings` : Postgres table with a pgvector `vector(1024)`
+                       column, keyed by chunks.id.
+                       Tracks model + version per chunk, so model
+                       upgrades can re-encode incrementally.
 """
 
 from __future__ import annotations
 
-import sqlite3
-import struct
 import time
 import warnings
 from pathlib import Path
@@ -39,7 +36,7 @@ import gc
 import os
 import resource
 
-import sqlite_vec
+import psycopg
 import torch
 from sentence_transformers import SentenceTransformer
 
@@ -82,34 +79,21 @@ def load_embedder(model_name: str = EMBEDDING_MODEL, device: str | None = None) 
 # DB helpers
 # ---------------------------------------------------------------------------
 
-def prepare_vec_connection(conn: sqlite3.Connection) -> None:
-    """Load sqlite-vec extension and ensure the virtual table exists.
-    Safe to call multiple times."""
-    conn.enable_load_extension(True)
-    sqlite_vec.load(conn)
-    conn.enable_load_extension(False)
-    conn.execute(
-        f"CREATE VIRTUAL TABLE IF NOT EXISTS vec_chunks "
-        f"USING vec0(embedding float[{EMBEDDING_DIM}])"
-    )
-    conn.commit()
-
-
 def build_embedding_input(cleaned: str, summary: str | None) -> str:
     if summary:
         return f"{summary}\n\n{cleaned}"
     return cleaned
 
 
-def _vec_to_blob(v) -> bytes:
-    """Pack a 1D float32 numpy array (or list) into sqlite-vec's blob format."""
+def _vec_to_text(v) -> str:
+    """Convert a 1D float32 numpy array (or list) to pgvector text format."""
     if hasattr(v, "tolist"):
         v = v.tolist()
-    return struct.pack(f"{len(v)}f", *v)
+    return "[" + ",".join(str(x) for x in v) + "]"
 
 
 def fetch_pending_chunks(
-    conn: sqlite3.Connection,
+    conn: psycopg.Connection,
     *,
     limit: int | None = None,
     where_extra: str = "",
@@ -126,8 +110,8 @@ def fetch_pending_chunks(
     q = (
         "SELECT c.id, c.cleaned, c.summary "
         "FROM chunks c "
-        "LEFT JOIN chunk_embeddings_meta m ON m.chunk_id = c.id "
-        "WHERE (m.chunk_id IS NULL OR m.embedding_version < ?) "
+        "LEFT JOIN chunk_embeddings ce ON ce.chunk_id = c.id "
+        "WHERE (ce.chunk_id IS NULL OR ce.embedding_version < %s) "
         "  AND c.summary_source != 'stub' "
         "  AND length(c.cleaned) > 50 "
     )
@@ -136,36 +120,35 @@ def fetch_pending_chunks(
         q += f"AND ({where_extra}) "
     q += "ORDER BY length(c.cleaned), c.id"
     if limit:
-        q += " LIMIT ?"
+        q += " LIMIT %s"
         args.append(limit)
-    return conn.execute(q, args).fetchall()
+    with conn.cursor() as cur:
+        cur.execute(q, args)
+        return cur.fetchall()
 
 
 def upsert_vectors(
-    conn: sqlite3.Connection,
+    conn: psycopg.Connection,
     chunk_ids: list[int],
     vectors,
 ) -> None:
-    """Insert (or replace) the vector for each chunk_id, and mark meta."""
-    cur = conn.cursor()
-    # Remove old rows for these ids (vec0 has no native UPSERT).
-    cur.executemany("DELETE FROM vec_chunks WHERE rowid = ?",
-                    [(cid,) for cid in chunk_ids])
-    cur.executemany(
-        "INSERT INTO vec_chunks (rowid, embedding) VALUES (?, ?)",
-        [(cid, _vec_to_blob(vectors[i])) for i, cid in enumerate(chunk_ids)],
-    )
-    cur.executemany(
-        """
-        INSERT INTO chunk_embeddings_meta (chunk_id, model, embedding_version, encoded_at)
-        VALUES (?, ?, ?, datetime('now'))
-        ON CONFLICT(chunk_id) DO UPDATE SET
-            model = excluded.model,
-            embedding_version = excluded.embedding_version,
-            encoded_at = datetime('now')
-        """,
-        [(cid, EMBEDDING_MODEL, EMBEDDING_VERSION) for cid in chunk_ids],
-    )
+    """Insert (or update) the embedding for each chunk_id."""
+    with conn.cursor() as cur:
+        cur.executemany(
+            """
+            INSERT INTO chunk_embeddings (chunk_id, embedding, model, embedding_version, encoded_at)
+            VALUES (%s, %s::vector, %s, %s, now())
+            ON CONFLICT (chunk_id) DO UPDATE SET
+                embedding = EXCLUDED.embedding,
+                model = EXCLUDED.model,
+                embedding_version = EXCLUDED.embedding_version,
+                encoded_at = now()
+            """,
+            [
+                (cid, _vec_to_text(vectors[i]), EMBEDDING_MODEL, EMBEDDING_VERSION)
+                for i, cid in enumerate(chunk_ids)
+            ],
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -173,7 +156,7 @@ def upsert_vectors(
 # ---------------------------------------------------------------------------
 
 def encode_and_store(
-    conn: sqlite3.Connection,
+    conn: psycopg.Connection,
     model: SentenceTransformer,
     batch_size: int = 16,
     progress_every: int = 500,
@@ -184,7 +167,6 @@ def encode_and_store(
 
     Returns a stats dict.
     """
-    prepare_vec_connection(conn)
     rows = fetch_pending_chunks(conn, limit=limit, where_extra=where_extra)
     total = len(rows)
     stats = {"total": total, "encoded": 0, "errors": 0,

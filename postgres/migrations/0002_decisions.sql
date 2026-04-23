@@ -39,9 +39,9 @@ CREATE TABLE IF NOT EXISTS decisions (
     -- Uses simple tokenizer to avoid language-dependent stemming mistakes
     -- on legal abbreviations (art. 42 LTF etc.).
     fts tsvector GENERATED ALWAYS AS (
-        setweight(to_tsvector('simple', unaccent(COALESCE(title,    ''))), 'A') ||
-        setweight(to_tsvector('simple', unaccent(COALESCE(regeste,  ''))), 'B') ||
-        setweight(to_tsvector('simple', unaccent(COALESCE(full_text,''))), 'C')
+        setweight(to_tsvector('simple', immutable_unaccent(COALESCE(title,    ''))), 'A') ||
+        setweight(to_tsvector('simple', immutable_unaccent(COALESCE(regeste,  ''))), 'B') ||
+        setweight(to_tsvector('simple', immutable_unaccent(COALESCE(full_text,''))), 'C')
     ) STORED,
 
     PRIMARY KEY (decision_id, decision_year)

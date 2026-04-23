@@ -15,13 +15,14 @@ from __future__ import annotations
 
 import hashlib
 import json
-import sqlite3
 import sys
-import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
+
+import psycopg
+from psycopg_pool import ConnectionPool
 
 from db_schema_parag import PROMPT_VERSION
 from search_stack.parag.citation_resolver import CitationResolver
@@ -67,16 +68,16 @@ class Phase5Result:
 # ---------------------------------------------------------------------------
 
 def _load_chunks_for_decision(
-    parag: sqlite3.Connection, decision_id: str
+    conn: psycopg.Connection, decision_id: str
 ) -> tuple[list[str], list[tuple[int, str]], str | None]:
     """Return (chunk_headers, [(chunk_id, cleaned), ...], dispositif_text).
 
     `dispositif_text` = cleaned of the last chunk heuristic (same as the
     validator uses).
     """
-    rows = parag.execute(
+    rows = conn.execute(
         "SELECT id, cleaned, summary FROM chunks "
-        "WHERE decision_id=? ORDER BY span_start",
+        "WHERE decision_id=%s ORDER BY span_start",
         (decision_id,),
     ).fetchall()
     chunk_id_texts = [(r[0], r[1]) for r in rows]
@@ -90,19 +91,19 @@ def _source_hash(full_text: str) -> str:
 
 
 def _should_skip(
-    parag: sqlite3.Connection,
+    conn: psycopg.Connection,
     decision_id: str,
     src_hash: str,
     prompt_version: int,
 ) -> bool:
-    row = parag.execute(
+    row = conn.execute(
         "SELECT source_hash, prompt_version, status FROM decision_enrichment "
-        "WHERE decision_id=?",
+        "WHERE decision_id=%s",
         (decision_id,),
     ).fetchone()
     if row is None:
         return False
-    return row[0] == src_hash and row[1] >= prompt_version and row[2] == "ok"
+    return row[0] == src_hash and row[1] >= prompt_version and row[2] in ("ok", "schema_invalid")
 
 
 # ---------------------------------------------------------------------------
@@ -110,7 +111,7 @@ def _should_skip(
 # ---------------------------------------------------------------------------
 
 def _store_decision_enrichment(
-    parag: sqlite3.Connection,
+    conn: psycopg.Connection,
     *,
     row: Phase5Row,
     obj: dict,
@@ -122,7 +123,7 @@ def _store_decision_enrichment(
     error_message: str | None = None,
 ) -> None:
     sort = obj.get("sort", {})
-    parag.execute(
+    conn.execute(
         """
         INSERT INTO decision_enrichment (
             decision_id, court, procedural_stage, outcome, subject_matter,
@@ -131,24 +132,24 @@ def _store_decision_enrichment(
             llm_latency_s, prompt_tokens, completion_tokens,
             status, error_message, processed_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())
         ON CONFLICT(decision_id) DO UPDATE SET
-            court               = excluded.court,
-            procedural_stage    = excluded.procedural_stage,
-            outcome             = excluded.outcome,
-            subject_matter      = excluded.subject_matter,
-            principle_questions = excluded.principle_questions,
-            obiter_dicta        = excluded.obiter_dicta,
-            doctrine_discussion = excluded.doctrine_discussion,
-            language_detected   = excluded.language_detected,
-            source_hash         = excluded.source_hash,
-            prompt_version      = excluded.prompt_version,
-            llm_latency_s       = excluded.llm_latency_s,
-            prompt_tokens       = excluded.prompt_tokens,
-            completion_tokens   = excluded.completion_tokens,
-            status              = excluded.status,
-            error_message       = excluded.error_message,
-            processed_at        = datetime('now')
+            court               = EXCLUDED.court,
+            procedural_stage    = EXCLUDED.procedural_stage,
+            outcome             = EXCLUDED.outcome,
+            subject_matter      = EXCLUDED.subject_matter,
+            principle_questions = EXCLUDED.principle_questions,
+            obiter_dicta        = EXCLUDED.obiter_dicta,
+            doctrine_discussion = EXCLUDED.doctrine_discussion,
+            language_detected   = EXCLUDED.language_detected,
+            source_hash         = EXCLUDED.source_hash,
+            prompt_version      = EXCLUDED.prompt_version,
+            llm_latency_s       = EXCLUDED.llm_latency_s,
+            prompt_tokens       = EXCLUDED.prompt_tokens,
+            completion_tokens   = EXCLUDED.completion_tokens,
+            status              = EXCLUDED.status,
+            error_message       = EXCLUDED.error_message,
+            processed_at        = now()
         """,
         (
             row.decision_id,
@@ -178,8 +179,7 @@ def _store_decision_enrichment(
 def process_decision(
     row: Phase5Row,
     *,
-    parag_conn: sqlite3.Connection,
-    parag_lock: threading.Lock,
+    pool: ConnectionPool,
     client: OpenRouterClient,
     resolver: CitationResolver,
     use_light_prompt: bool = False,
@@ -189,15 +189,15 @@ def process_decision(
     src_hash = _source_hash(row.full_text or "")
 
     if not force:
-        with parag_lock:
-            if _should_skip(parag_conn, row.decision_id, src_hash, ENRICHMENT_PROMPT_VERSION):
+        with pool.connection() as conn:
+            if _should_skip(conn, row.decision_id, src_hash, ENRICHMENT_PROMPT_VERSION):
                 return Phase5Result(row.decision_id, "skipped",
                                     latency_s=time.monotonic() - t_start)
 
     # Build context from SAC chunks (idempotent — pure reads)
-    with parag_lock:
+    with pool.connection() as conn:
         headers, chunk_id_texts, dispositif = _load_chunks_for_decision(
-            parag_conn, row.decision_id
+            conn, row.decision_id
         )
 
     ctx = DecisionContext(
@@ -214,18 +214,18 @@ def process_decision(
     system = SYSTEM_PROMPT_LIGHT if use_light_prompt else SYSTEM_PROMPT_FULL
     user = build_user_prompt(ctx, light=use_light_prompt)
 
-    # LLM call (outside the DB lock)
+    # LLM call (no DB connection held)
     try:
-        resp = client.chat(system=system, user=user, max_tokens=3500, temperature=0.1)
+        resp = client.chat(system=system, user=user, max_tokens=6000, temperature=0.1)
     except Exception as exc:
-        with parag_lock:
+        with pool.connection() as conn:
             _store_decision_enrichment(
-                parag_conn, row=row, obj={},
+                conn, row=row, obj={},
                 src_hash=src_hash, latency_s=time.monotonic() - t_start,
                 prompt_tokens=0, completion_tokens=0,
                 status="error", error_message=f"llm: {exc}"[:500],
             )
-            parag_conn.commit()
+            conn.commit()
         return Phase5Result(row.decision_id, "error",
                             latency_s=time.monotonic() - t_start,
                             error=f"llm: {exc}"[:200])
@@ -239,56 +239,74 @@ def process_decision(
     try:
         obj = json.loads(raw)
     except json.JSONDecodeError as exc:
-        with parag_lock:
+        with pool.connection() as conn:
             _store_decision_enrichment(
-                parag_conn, row=row, obj={},
+                conn, row=row, obj={},
                 src_hash=src_hash, latency_s=resp.latency_s,
                 prompt_tokens=resp.usage.get("prompt_tokens", 0),
                 completion_tokens=resp.usage.get("completion_tokens", 0),
                 status="json_fail", error_message=f"json: {exc}"[:500],
             )
-            parag_conn.commit()
+            conn.commit()
         return Phase5Result(row.decision_id, "json_fail",
                             latency_s=resp.latency_s, error=str(exc)[:200])
 
     obj = canonicalise_bge(obj)
     errors = validate_full(obj) if not use_light_prompt else []
-    schema_status = "ok" if not errors else "schema_invalid"
+    schema_status = "ok"
 
     # Per-chunk citation extraction (regex only — LLM basis is in decision_enrichment)
     pqs = obj.get("principle_questions", []) or []
     trs = obj.get("prior_case_treatment", []) or []
-    cur = parag_conn.cursor()
     total_laws = total_cases = 0
 
-    with parag_lock:
+    with pool.connection() as conn:
         _store_decision_enrichment(
-            parag_conn, row=row, obj=obj,
+            conn, row=row, obj=obj,
             src_hash=src_hash, latency_s=resp.latency_s,
             prompt_tokens=resp.usage.get("prompt_tokens", 0),
             completion_tokens=resp.usage.get("completion_tokens", 0),
             status=schema_status,
         )
         # Clear + re-insert all chunk citations for this decision
+        cur = conn.cursor()
         cur.execute(
             "DELETE FROM chunk_law_citations WHERE chunk_id IN "
-            "(SELECT id FROM chunks WHERE decision_id=?)", (row.decision_id,),
+            "(SELECT id FROM chunks WHERE decision_id=%s)", (row.decision_id,),
         )
         cur.execute(
             "DELETE FROM chunk_case_citations WHERE chunk_id IN "
-            "(SELECT id FROM chunks WHERE decision_id=?)", (row.decision_id,),
+            "(SELECT id FROM chunks WHERE decision_id=%s)", (row.decision_id,),
         )
         for chunk_id, cleaned in chunk_id_texts:
             laws, cases = resolver.resolve_chunk(
                 chunk_text=cleaned,
-                llm_legal_basis=[],  # LLM basis stored in decision_enrichment JSON
+                llm_legal_basis=[],
                 llm_prior_cases=[],
                 self_decision_id=row.decision_id,
             )
-            resolver.store(parag_conn, chunk_id, laws, cases)
+            if laws:
+                cur.executemany(
+                    "INSERT INTO chunk_law_citations "
+                    "(chunk_id, sr_number, law_abbr, article_num, paragraph, letter, "
+                    "raw_text, normalized, source, resolved) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                    [(chunk_id, c.sr_number, c.law_abbr, c.article_num,
+                      c.paragraph, c.letter, c.raw_text, c.normalized,
+                      c.source, bool(c.resolved)) for c in laws],
+                )
+            if cases:
+                cur.executemany(
+                    "INSERT INTO chunk_case_citations "
+                    "(chunk_id, target_decision_id, citation_type, raw_text, source, direction) "
+                    "VALUES (%s, %s, %s, %s, %s, %s)",
+                    [(chunk_id, c.target_decision_id, c.citation_type,
+                      c.raw_text, c.source, c.direction) for c in cases],
+                )
             total_laws += len(laws)
             total_cases += len(cases)
-        parag_conn.commit()
+        cur.close()
+        conn.commit()
 
     return Phase5Result(
         row.decision_id,
@@ -310,7 +328,7 @@ def process_decision(
 def run_many(
     rows: list[Phase5Row],
     *,
-    parag_conn: sqlite3.Connection,
+    pool: ConnectionPool,
     client: OpenRouterClient,
     resolver: CitationResolver,
     n_workers: int = 8,
@@ -318,7 +336,6 @@ def run_many(
     use_light_prompt: bool = False,
     force: bool = False,
 ) -> dict:
-    lock = threading.Lock()
     agg = {
         "total": len(rows), "ok": 0, "skipped": 0, "error": 0,
         "json_fail": 0, "schema_invalid": 0,
@@ -330,13 +347,13 @@ def run_many(
 
     def work(row: Phase5Row) -> Phase5Result:
         return process_decision(
-            row, parag_conn=parag_conn, parag_lock=lock,
+            row, pool=pool,
             client=client, resolver=resolver,
             use_light_prompt=use_light_prompt, force=force,
         )
 
-    with ThreadPoolExecutor(max_workers=n_workers) as pool:
-        futures = [pool.submit(work, r) for r in rows]
+    with ThreadPoolExecutor(max_workers=n_workers) as executor:
+        futures = [executor.submit(work, r) for r in rows]
         done = 0
         for fut in as_completed(futures):
             r = fut.result()

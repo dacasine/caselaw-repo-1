@@ -14,8 +14,7 @@ authoritative.
 from __future__ import annotations
 
 import re
-import sqlite3
-from pathlib import Path
+import psycopg
 
 
 # ---------------------------------------------------------------------------
@@ -110,49 +109,42 @@ def static_authority_score(court_level: int, atf_published: bool) -> float:
 # DB runner
 # ---------------------------------------------------------------------------
 
-def populate_authority(conn: sqlite3.Connection, *, courts_filter: str | None = None) -> dict:
-    """Fill decision_authority (court_level, atf_published, authority_score)
-    for every decision present in decisions_ref (the source DB). Idempotent.
-
-    If `courts_filter` is given, restrict to those courts only — useful for
-    incremental updates after new scopes are enriched.
-    """
-    src_db = Path.home() / ".swiss-caselaw" / "decisions.db"
-    src = sqlite3.connect(f"file:{src_db}?mode=ro", uri=True)
-    src.row_factory = sqlite3.Row
-
+def populate_authority(conn: psycopg.Connection, *, courts_filter: str | None = None) -> dict:
+    """Fill decision_authority for every decision. Reads from the same
+    Postgres DB (decisions table). Idempotent."""
     where = ""
-    params: tuple = ()
+    params: list = []
     if courts_filter:
-        where = "WHERE court IN (" + ",".join(["?"] * len(courts_filter.split(","))) + ")"
-        params = tuple(c.strip() for c in courts_filter.split(","))
+        courts = [c.strip() for c in courts_filter.split(",")]
+        placeholders = ",".join(["%s"] * len(courts))
+        where = f"WHERE court IN ({placeholders})"
+        params = courts
 
-    rows = src.execute(
-        f"SELECT decision_id, court FROM decisions {where}", params
-    ).fetchall()
-    src.close()
-
-    cur = conn.cursor()
-    n_written = 0
-    for r in rows:
-        did = r["decision_id"]
-        court = r["court"]
-        level = map_court_level(court)
-        is_atf = is_atf_published(did)
-        score = static_authority_score(level, is_atf)
+    with conn.cursor() as cur:
         cur.execute(
-            """
-            INSERT INTO decision_authority
-                (decision_id, court_level, atf_published, authority_score, computed_at)
-            VALUES (?, ?, ?, ?, datetime('now'))
-            ON CONFLICT(decision_id) DO UPDATE SET
-                court_level     = excluded.court_level,
-                atf_published   = excluded.atf_published,
-                authority_score = excluded.authority_score,
-                computed_at     = datetime('now')
-            """,
-            (did, level, int(is_atf), score),
+            f"SELECT decision_id, court FROM decisions {where}", params
         )
-        n_written += 1
+        rows = cur.fetchall()
+
+    n_written = 0
+    with conn.cursor() as cur:
+        for did, court in rows:
+            level = map_court_level(court)
+            is_atf = is_atf_published(did)
+            score = static_authority_score(level, is_atf)
+            cur.execute(
+                """
+                INSERT INTO decision_authority
+                    (decision_id, court_level, atf_published, authority_score, computed_at)
+                VALUES (%s, %s, %s, %s, now())
+                ON CONFLICT(decision_id) DO UPDATE SET
+                    court_level     = EXCLUDED.court_level,
+                    atf_published   = EXCLUDED.atf_published,
+                    authority_score = EXCLUDED.authority_score,
+                    computed_at     = now()
+                """,
+                (did, level, is_atf, score),
+            )
+            n_written += 1
     conn.commit()
     return {"decisions_scored": n_written}
