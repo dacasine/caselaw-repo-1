@@ -1,0 +1,587 @@
+# Swiss Legal Doctrine Taxonomy
+# Each entry: id, title_fr, title_de, title_it, articles, sr_numbers, path
+# Used by generate_fiches.py to batch-generate doctrine sheets
+
+batch_100:
+  # ── 1.5 Obligations restantes ──────────────────────────────
+  - id: "1.5.1.1"
+    title_fr: "Formation du contrat (CO 1-10)"
+    articles: ["CO 1-10"]
+    sr_numbers: ["220"]
+    path: "1_droit_prive/1.5_obligations/1.5.1_partie_generale"
+
+  - id: "1.5.1.2"
+    title_fr: "Vices du consentement — erreur, dol, crainte (CO 23-31)"
+    articles: ["CO 23-31"]
+    sr_numbers: ["220"]
+    path: "1_droit_prive/1.5_obligations/1.5.1_partie_generale"
+
+  - id: "1.5.1.3"
+    title_fr: "Forme des contrats (CO 11-16)"
+    articles: ["CO 11-16"]
+    sr_numbers: ["220"]
+    path: "1_droit_prive/1.5_obligations/1.5.1_partie_generale"
+
+  - id: "1.5.1.4"
+    title_fr: "Objet et cause — contrats illicites et immoraux (CO 19-20)"
+    articles: ["CO 19-20"]
+    sr_numbers: ["220"]
+    path: "1_droit_prive/1.5_obligations/1.5.1_partie_generale"
+
+  - id: "1.5.1.5"
+    title_fr: "Responsabilité précontractuelle (culpa in contrahendo)"
+    articles: ["CO 2"]
+    sr_numbers: ["220"]
+    path: "1_droit_prive/1.5_obligations/1.5.1_partie_generale"
+
+  - id: "1.5.1.6"
+    title_fr: "Exécution des obligations (CO 68-96)"
+    articles: ["CO 68-96"]
+    sr_numbers: ["220"]
+    path: "1_droit_prive/1.5_obligations/1.5.1_partie_generale"
+
+  - id: "1.5.1.8"
+    title_fr: "Inexécution et dommages-intérêts (CO 97-101)"
+    articles: ["CO 97-101"]
+    sr_numbers: ["220"]
+    path: "1_droit_prive/1.5_obligations/1.5.1_partie_generale"
+
+  - id: "1.5.1.9"
+    title_fr: "Résolution et résiliation pour inexécution (CO 107-109)"
+    articles: ["CO 107-109"]
+    sr_numbers: ["220"]
+    path: "1_droit_prive/1.5_obligations/1.5.1_partie_generale"
+
+  - id: "1.5.1.11"
+    title_fr: "Solidarité (CO 143-150)"
+    articles: ["CO 143-150"]
+    sr_numbers: ["220"]
+    path: "1_droit_prive/1.5_obligations/1.5.1_partie_generale"
+
+  - id: "1.5.1.12"
+    title_fr: "Cession de créance et reprise de dette (CO 164-183)"
+    articles: ["CO 164-183"]
+    sr_numbers: ["220"]
+    path: "1_droit_prive/1.5_obligations/1.5.1_partie_generale"
+
+  - id: "1.5.1.14"
+    title_fr: "Enrichissement illégitime (CO 62-67)"
+    articles: ["CO 62-67"]
+    sr_numbers: ["220"]
+    path: "1_droit_prive/1.5_obligations/1.5.1_partie_generale"
+
+  - id: "1.5.2.1"
+    title_fr: "Vente mobilière (CO 184-215)"
+    articles: ["CO 184-215"]
+    sr_numbers: ["220"]
+    path: "1_droit_prive/1.5_obligations/1.5.2_contrats_speciaux"
+
+  - id: "1.5.2.2"
+    title_fr: "Vente immobilière (CO 216-221)"
+    articles: ["CO 216-221"]
+    sr_numbers: ["220"]
+    path: "1_droit_prive/1.5_obligations/1.5.2_contrats_speciaux"
+
+  - id: "1.5.2.4"
+    title_fr: "Bail à loyer — commercial (CO 253-274g spécificités)"
+    articles: ["CO 253-274g"]
+    sr_numbers: ["220"]
+    path: "1_droit_prive/1.5_obligations/1.5.2_contrats_speciaux"
+
+  - id: "1.5.2.8"
+    title_fr: "Contrat de travail — protection contre le licenciement (CO 336-336d)"
+    articles: ["CO 336-336d"]
+    sr_numbers: ["220"]
+    path: "1_droit_prive/1.5_obligations/1.5.2_contrats_speciaux"
+
+  - id: "1.5.2.10"
+    title_fr: "Contrat d'entreprise (CO 363-379)"
+    articles: ["CO 363-379"]
+    sr_numbers: ["220"]
+    path: "1_droit_prive/1.5_obligations/1.5.2_contrats_speciaux"
+
+  - id: "1.5.2.11"
+    title_fr: "Contrat d'assurance (LCA)"
+    articles: ["LCA 1-101"]
+    sr_numbers: ["221.229.1"]
+    path: "1_droit_prive/1.5_obligations/1.5.2_contrats_speciaux"
+
+  - id: "1.5.2.12"
+    title_fr: "Cautionnement (CO 492-512)"
+    articles: ["CO 492-512"]
+    sr_numbers: ["220"]
+    path: "1_droit_prive/1.5_obligations/1.5.2_contrats_speciaux"
+
+  - id: "1.5.3.2"
+    title_fr: "Dommage et lien de causalité"
+    articles: ["CO 41-42"]
+    sr_numbers: ["220"]
+    path: "1_droit_prive/1.5_obligations/1.5.3_responsabilite_civile"
+
+  - id: "1.5.3.3"
+    title_fr: "Tort moral (CO 47-49)"
+    articles: ["CO 47-49"]
+    sr_numbers: ["220"]
+    path: "1_droit_prive/1.5_obligations/1.5.3_responsabilite_civile"
+
+  - id: "1.5.3.5"
+    title_fr: "Responsabilité du propriétaire d'ouvrage (CO 58)"
+    articles: ["CO 58"]
+    sr_numbers: ["220"]
+    path: "1_droit_prive/1.5_obligations/1.5.3_responsabilite_civile"
+
+  # ── 3. Droit pénal restant ──────────────────────────────────
+  - id: "3.1.2"
+    title_fr: "Intention et négligence (CP 12)"
+    articles: ["CP 12"]
+    sr_numbers: ["311.0"]
+    path: "3_droit_penal/3.1_partie_generale"
+
+  - id: "3.1.3"
+    title_fr: "Tentative et désistement (CP 22-23)"
+    articles: ["CP 22-23"]
+    sr_numbers: ["311.0"]
+    path: "3_droit_penal/3.1_partie_generale"
+
+  - id: "3.1.4"
+    title_fr: "Participation — instigation et complicité (CP 24-27)"
+    articles: ["CP 24-27"]
+    sr_numbers: ["311.0"]
+    path: "3_droit_penal/3.1_partie_generale"
+
+  - id: "3.1.5"
+    title_fr: "Concours d'infractions (CP 49)"
+    articles: ["CP 49"]
+    sr_numbers: ["311.0"]
+    path: "3_droit_penal/3.1_partie_generale"
+
+  - id: "3.1.6"
+    title_fr: "Légitime défense et état de nécessité (CP 15-18)"
+    articles: ["CP 15-18"]
+    sr_numbers: ["311.0"]
+    path: "3_droit_penal/3.1_partie_generale"
+
+  - id: "3.1.9"
+    title_fr: "Peine privative de liberté (CP 40-46)"
+    articles: ["CP 40-46"]
+    sr_numbers: ["311.0"]
+    path: "3_droit_penal/3.1_partie_generale"
+
+  - id: "3.1.10"
+    title_fr: "Peine pécuniaire et travail d'intérêt général (CP 34-39)"
+    articles: ["CP 34-39"]
+    sr_numbers: ["311.0"]
+    path: "3_droit_penal/3.1_partie_generale"
+
+  - id: "3.1.11"
+    title_fr: "Sursis et sursis partiel (CP 42-46)"
+    articles: ["CP 42-46"]
+    sr_numbers: ["311.0"]
+    path: "3_droit_penal/3.1_partie_generale"
+
+  - id: "3.1.13"
+    title_fr: "Prescription pénale (CP 97-101)"
+    articles: ["CP 97-101"]
+    sr_numbers: ["311.0"]
+    path: "3_droit_penal/3.1_partie_generale"
+
+  - id: "3.2.1"
+    title_fr: "Infractions contre la vie — homicide (CP 111-117)"
+    articles: ["CP 111-117"]
+    sr_numbers: ["311.0"]
+    path: "3_droit_penal/3.2_partie_speciale"
+
+  - id: "3.2.2"
+    title_fr: "Lésions corporelles (CP 122-126)"
+    articles: ["CP 122-126"]
+    sr_numbers: ["311.0"]
+    path: "3_droit_penal/3.2_partie_speciale"
+
+  - id: "3.2.4"
+    title_fr: "Infractions contre la liberté — menaces et contrainte (CP 180-186)"
+    articles: ["CP 180-186"]
+    sr_numbers: ["311.0"]
+    path: "3_droit_penal/3.2_partie_speciale"
+
+  - id: "3.2.5"
+    title_fr: "Infractions contre l'intégrité sexuelle (CP 187-200)"
+    articles: ["CP 187-200"]
+    sr_numbers: ["311.0"]
+    path: "3_droit_penal/3.2_partie_speciale"
+
+  - id: "3.2.8"
+    title_fr: "Escroquerie et abus de confiance (CP 146-148)"
+    articles: ["CP 146-148"]
+    sr_numbers: ["311.0"]
+    path: "3_droit_penal/3.2_partie_speciale"
+
+  - id: "3.2.14"
+    title_fr: "Circulation routière — infractions pénales (LCR)"
+    articles: ["LCR 90-92"]
+    sr_numbers: ["741.01"]
+    path: "3_droit_penal/3.2_partie_speciale"
+
+  - id: "3.2.15"
+    title_fr: "Blanchiment d'argent (CP 305bis, LBA)"
+    articles: ["CP 305bis", "LBA"]
+    sr_numbers: ["311.0", "955.0"]
+    path: "3_droit_penal/3.2_partie_speciale"
+
+  - id: "3.3.1"
+    title_fr: "Principes de procédure pénale (CPP 1-11)"
+    articles: ["CPP 1-11"]
+    sr_numbers: ["312.0"]
+    path: "3_droit_penal/3.3_procedure_penale"
+
+  - id: "3.3.5"
+    title_fr: "Preuves — principes et admissibilité (CPP 139-141)"
+    articles: ["CPP 139-141"]
+    sr_numbers: ["312.0"]
+    path: "3_droit_penal/3.3_procedure_penale"
+
+  - id: "3.3.6"
+    title_fr: "Ordonnance pénale (CPP 352-356)"
+    articles: ["CPP 352-356"]
+    sr_numbers: ["312.0"]
+    path: "3_droit_penal/3.3_procedure_penale"
+
+  - id: "3.3.8"
+    title_fr: "Voies de recours — appel (CPP 398-409)"
+    articles: ["CPP 398-409"]
+    sr_numbers: ["312.0"]
+    path: "3_droit_penal/3.3_procedure_penale"
+
+  # ── 2. Droit public restant ─────────────────────────────────
+  - id: "2.1.2"
+    title_fr: "Égalité et non-discrimination (Cst. 8)"
+    articles: ["Cst. 8"]
+    sr_numbers: ["101"]
+    path: "2_droit_public/2.1_constitutionnel"
+
+  - id: "2.1.4"
+    title_fr: "Liberté économique (Cst. 27)"
+    articles: ["Cst. 27"]
+    sr_numbers: ["101"]
+    path: "2_droit_public/2.1_constitutionnel"
+
+  - id: "2.1.5"
+    title_fr: "Garantie de la propriété (Cst. 26)"
+    articles: ["Cst. 26"]
+    sr_numbers: ["101"]
+    path: "2_droit_public/2.1_constitutionnel"
+
+  - id: "2.1.11"
+    title_fr: "Principe de proportionnalité"
+    articles: ["Cst. 5 al. 2", "Cst. 36 al. 3"]
+    sr_numbers: ["101"]
+    path: "2_droit_public/2.1_constitutionnel"
+
+  - id: "2.1.12"
+    title_fr: "Protection de la bonne foi — interdiction de l'arbitraire (Cst. 9)"
+    articles: ["Cst. 9"]
+    sr_numbers: ["101"]
+    path: "2_droit_public/2.1_constitutionnel"
+
+  - id: "2.2.1"
+    title_fr: "Décision administrative (PA 5)"
+    articles: ["PA 5"]
+    sr_numbers: ["172.021"]
+    path: "2_droit_public/2.2_administratif"
+
+  - id: "2.2.5"
+    title_fr: "Recours au Tribunal fédéral en droit public (LTF 82-89)"
+    articles: ["LTF 82-89"]
+    sr_numbers: ["173.110"]
+    path: "2_droit_public/2.2_administratif"
+
+  - id: "2.2.8"
+    title_fr: "Aménagement du territoire et permis de construire (LAT)"
+    articles: ["LAT 22-24"]
+    sr_numbers: ["700"]
+    path: "2_droit_public/2.2_administratif"
+
+  - id: "2.3.3"
+    title_fr: "Asile — procédure et motifs de persécution (LAsi)"
+    articles: ["LAsi 3-7"]
+    sr_numbers: ["142.31"]
+    path: "2_droit_public/2.3_etrangers_asile"
+
+  - id: "2.3.5"
+    title_fr: "Regroupement familial (LEI/ALCP)"
+    articles: ["LEI 42-52", "ALCP Annexe I art. 3"]
+    sr_numbers: ["142.20"]
+    path: "2_droit_public/2.3_etrangers_asile"
+
+  - id: "2.4.2"
+    title_fr: "Impôt sur la fortune (LIFD/LHID)"
+    articles: ["LHID 13-14"]
+    sr_numbers: ["642.14"]
+    path: "2_droit_public/2.4_fiscal"
+
+  - id: "2.4.4"
+    title_fr: "Taxe sur la valeur ajoutée (LTVA)"
+    articles: ["LTVA 1-115"]
+    sr_numbers: ["641.20"]
+    path: "2_droit_public/2.4_fiscal"
+
+  - id: "2.4.8"
+    title_fr: "Procédure de taxation et contentieux fiscal"
+    articles: ["LIFD 130-145"]
+    sr_numbers: ["642.11"]
+    path: "2_droit_public/2.4_fiscal"
+
+  - id: "2.5.1"
+    title_fr: "AVS/AI — cotisations et rentes (LAVS/LAI)"
+    articles: ["LAVS 1-21", "LAI 1-4"]
+    sr_numbers: ["831.10", "831.20"]
+    path: "2_droit_public/2.5_assurances_sociales"
+
+  - id: "2.5.3"
+    title_fr: "Prévoyance professionnelle (LPP)"
+    articles: ["LPP 1-86"]
+    sr_numbers: ["831.40"]
+    path: "2_droit_public/2.5_assurances_sociales"
+
+  - id: "2.5.4"
+    title_fr: "Assurance-maladie (LAMal)"
+    articles: ["LAMal 1-105"]
+    sr_numbers: ["832.10"]
+    path: "2_droit_public/2.5_assurances_sociales"
+
+  - id: "2.5.5"
+    title_fr: "Assurance-accidents (LAA)"
+    articles: ["LAA 1-99"]
+    sr_numbers: ["832.20"]
+    path: "2_droit_public/2.5_assurances_sociales"
+
+  - id: "2.5.6"
+    title_fr: "Assurance-chômage (LACI)"
+    articles: ["LACI 1-120"]
+    sr_numbers: ["837.0"]
+    path: "2_droit_public/2.5_assurances_sociales"
+
+  - id: "2.5.9"
+    title_fr: "Partie générale du droit des assurances sociales (LPGA)"
+    articles: ["LPGA 1-78"]
+    sr_numbers: ["830.1"]
+    path: "2_droit_public/2.5_assurances_sociales"
+
+  - id: "2.6.1"
+    title_fr: "Protection des données (nLPD 2023)"
+    articles: ["LPD 1-74"]
+    sr_numbers: ["235.1"]
+    path: "2_droit_public/2.6_numerique"
+
+  # ── 4. Procédure civile ─────────────────────────────────────
+  - id: "4.1"
+    title_fr: "Principes et compétences (CPC 1-35)"
+    articles: ["CPC 1-35"]
+    sr_numbers: ["272"]
+    path: "4_procedure_civile"
+
+  - id: "4.3"
+    title_fr: "Conciliation obligatoire (CPC 197-212)"
+    articles: ["CPC 197-212"]
+    sr_numbers: ["272"]
+    path: "4_procedure_civile"
+
+  - id: "4.4"
+    title_fr: "Procédure ordinaire (CPC 219-242)"
+    articles: ["CPC 219-242"]
+    sr_numbers: ["272"]
+    path: "4_procedure_civile"
+
+  - id: "4.5"
+    title_fr: "Procédure simplifiée (CPC 243-247)"
+    articles: ["CPC 243-247"]
+    sr_numbers: ["272"]
+    path: "4_procedure_civile"
+
+  - id: "4.8"
+    title_fr: "Preuves en procédure civile (CPC 150-193)"
+    articles: ["CPC 150-193"]
+    sr_numbers: ["272"]
+    path: "4_procedure_civile"
+
+  - id: "4.10"
+    title_fr: "Assistance judiciaire (CPC 117-123)"
+    articles: ["CPC 117-123"]
+    sr_numbers: ["272"]
+    path: "4_procedure_civile"
+
+  - id: "4.11"
+    title_fr: "Voies de recours cantonales — appel et recours (CPC 308-334)"
+    articles: ["CPC 308-334"]
+    sr_numbers: ["272"]
+    path: "4_procedure_civile"
+
+  - id: "4.12"
+    title_fr: "Recours au TF en matière civile (LTF 72-77)"
+    articles: ["LTF 72-77"]
+    sr_numbers: ["173.110"]
+    path: "4_procedure_civile"
+
+  # ── 5. Poursuite et faillite restant ────────────────────────
+  - id: "5.1"
+    title_fr: "Poursuite par voie de saisie (LP 42-150)"
+    articles: ["LP 42-150"]
+    sr_numbers: ["281.1"]
+    path: "5_poursuite_faillite"
+
+  - id: "5.2"
+    title_fr: "Poursuite par voie de faillite (LP 159-270)"
+    articles: ["LP 159-270"]
+    sr_numbers: ["281.1"]
+    path: "5_poursuite_faillite"
+
+  - id: "5.3"
+    title_fr: "Commandement de payer et opposition (LP 67-84)"
+    articles: ["LP 67-84"]
+    sr_numbers: ["281.1"]
+    path: "5_poursuite_faillite"
+
+  - id: "5.6"
+    title_fr: "Séquestre (LP 271-281)"
+    articles: ["LP 271-281"]
+    sr_numbers: ["281.1"]
+    path: "5_poursuite_faillite"
+
+  - id: "5.10"
+    title_fr: "Action révocatoire — paulienne (LP 285-292)"
+    articles: ["LP 285-292"]
+    sr_numbers: ["281.1"]
+    path: "5_poursuite_faillite"
+
+  - id: "5.11"
+    title_fr: "Minimum vital du débiteur (LP 92-93)"
+    articles: ["LP 92-93"]
+    sr_numbers: ["281.1"]
+    path: "5_poursuite_faillite"
+
+  # ── 1. Droit privé restant ──────────────────────────────────
+  - id: "1.1.2"
+    title_fr: "Protection de la personnalité (CC 28-28l)"
+    articles: ["CC 28-28l"]
+    sr_numbers: ["210"]
+    path: "1_droit_prive/1.1_personnes"
+
+  - id: "1.2.1"
+    title_fr: "Mariage — conditions et effets (CC 90-180)"
+    articles: ["CC 90-180"]
+    sr_numbers: ["210"]
+    path: "1_droit_prive/1.2_famille"
+
+  - id: "1.2.3"
+    title_fr: "Régimes matrimoniaux (CC 181-251)"
+    articles: ["CC 181-251"]
+    sr_numbers: ["210"]
+    path: "1_droit_prive/1.2_famille"
+
+  - id: "1.2.5"
+    title_fr: "Divorce — effets (entretien, prévoyance, logement)"
+    articles: ["CC 120-132"]
+    sr_numbers: ["210"]
+    path: "1_droit_prive/1.2_famille"
+
+  - id: "1.2.8"
+    title_fr: "Autorité parentale et garde (CC 296-306)"
+    articles: ["CC 296-306"]
+    sr_numbers: ["210"]
+    path: "1_droit_prive/1.2_famille"
+
+  - id: "1.2.11"
+    title_fr: "Protection de l'adulte — curatelle (CC 360-456)"
+    articles: ["CC 360-456"]
+    sr_numbers: ["210"]
+    path: "1_droit_prive/1.2_famille"
+
+  - id: "1.3.1"
+    title_fr: "Dévolution légale — ordre des héritiers (CC 457-466)"
+    articles: ["CC 457-466"]
+    sr_numbers: ["210"]
+    path: "1_droit_prive/1.3_successions"
+
+  - id: "1.3.2"
+    title_fr: "Réserves héréditaires (CC 470-480)"
+    articles: ["CC 470-480"]
+    sr_numbers: ["210"]
+    path: "1_droit_prive/1.3_successions"
+
+  - id: "1.4.1"
+    title_fr: "Propriété — contenu et limitations (CC 641-654)"
+    articles: ["CC 641-654"]
+    sr_numbers: ["210"]
+    path: "1_droit_prive/1.4_droits_reels"
+
+  - id: "1.4.3"
+    title_fr: "Copropriété et propriété par étages (CC 646-712)"
+    articles: ["CC 646-712"]
+    sr_numbers: ["210"]
+    path: "1_droit_prive/1.4_droits_reels"
+
+  - id: "1.6.1"
+    title_fr: "Société anonyme — constitution et organisation (CO 620-763)"
+    articles: ["CO 620-763"]
+    sr_numbers: ["220"]
+    path: "1_droit_prive/1.6_commercial"
+
+  - id: "1.6.2"
+    title_fr: "Société à responsabilité limitée (CO 772-827)"
+    articles: ["CO 772-827"]
+    sr_numbers: ["220"]
+    path: "1_droit_prive/1.6_commercial"
+
+  - id: "1.6.7"
+    title_fr: "Concurrence déloyale (LCD)"
+    articles: ["LCD 1-23"]
+    sr_numbers: ["241"]
+    path: "1_droit_prive/1.6_commercial"
+
+  # ── 6-8 Transversaux ────────────────────────────────────────
+  - id: "6.1"
+    title_fr: "LDIP — principes généraux (LDIP 1-14)"
+    articles: ["LDIP 1-14"]
+    sr_numbers: ["291"]
+    path: "6_droit_international_prive"
+
+  - id: "6.2"
+    title_fr: "Droit applicable aux contrats (LDIP 116-122)"
+    articles: ["LDIP 116-122"]
+    sr_numbers: ["291"]
+    path: "6_droit_international_prive"
+
+  - id: "7.1"
+    title_fr: "CEDH — droits garantis et jurisprudence suisse"
+    articles: ["CEDH 2-14"]
+    sr_numbers: ["0.101"]
+    path: "7_transversal"
+
+  - id: "7.4"
+    title_fr: "Protection du consommateur"
+    articles: ["CO 40a-40g", "LCD 3"]
+    sr_numbers: ["220", "241"]
+    path: "7_transversal"
+
+  - id: "7.7"
+    title_fr: "Droit bancaire et financier (LFINMA, LB, LEFin)"
+    articles: ["LFINMA", "LB", "LEFin"]
+    sr_numbers: ["956.1", "952.0", "954.1"]
+    path: "7_transversal"
+
+  - id: "8.1"
+    title_fr: "Recours au Tribunal fédéral — généralités (LTF)"
+    articles: ["LTF 42-107"]
+    sr_numbers: ["173.110"]
+    path: "8_voies_recours"
+
+  - id: "8.2"
+    title_fr: "Valeur litigieuse et qualité pour recourir (LTF)"
+    articles: ["LTF 51-53", "LTF 76-89"]
+    sr_numbers: ["173.110"]
+    path: "8_voies_recours"
+
+  - id: "8.5"
+    title_fr: "Arbitraire (Cst. 9) comme motif de recours"
+    articles: ["Cst. 9", "LTF 95"]
+    sr_numbers: ["101", "173.110"]
+    path: "8_voies_recours"

@@ -840,6 +840,109 @@ def _get_enrichment(raw_id: str) -> dict | None:
 # 19. find_related
 # ---------------------------------------------------------------------------
 
+def _get_authority(court_code: str | None = None, canton: str | None = None) -> list[dict]:
+    """Lookup authority by court_code or canton."""
+    conn = _get_conn()
+    if court_code:
+        # Try exact match first, then partial
+        row = conn.execute(
+            "SELECT * FROM authorities WHERE court_code = %s", (court_code,)
+        ).fetchone()
+        if row:
+            cols = [d.name for d in conn.execute("SELECT * FROM authorities LIMIT 0").description]
+            return [dict(zip(cols, row))]
+        # Partial match on name or court_code
+        rows = conn.execute(
+            """SELECT * FROM authorities
+               WHERE court_code ILIKE %s OR name_fr ILIKE %s OR name_de ILIKE %s
+               LIMIT 10""",
+            (f"%{court_code}%", f"%{court_code}%", f"%{court_code}%"),
+        ).fetchall()
+    elif canton:
+        rows = conn.execute(
+            "SELECT * FROM authorities WHERE canton = %s ORDER BY level DESC, name_fr",
+            (canton.upper(),),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM authorities ORDER BY level DESC, canton, name_fr LIMIT 20"
+        ).fetchall()
+    if not rows:
+        return {"message": "No authorities found. The directory is being populated — data will be added progressively via scraping of official court websites."}
+    cols = [d.name for d in conn.execute("SELECT * FROM authorities LIMIT 0").description]
+    return [dict(zip(cols, r)) for r in rows]
+
+
+def _search_judges(name: str | None = None, court_code: str | None = None,
+                   function: str | None = None, canton: str | None = None,
+                   active_only: bool = True) -> list[dict]:
+    """Search judges roster."""
+    conn = _get_conn()
+    clauses = []
+    params = []
+    if name:
+        clauses.append("(j.last_name ILIKE %s OR j.first_name ILIKE %s)")
+        params.extend([f"%{name}%", f"%{name}%"])
+    if court_code:
+        clauses.append("a.court_code = %s")
+        params.append(court_code)
+    if function:
+        clauses.append("j.function ILIKE %s")
+        params.append(f"%{function}%")
+    if canton:
+        clauses.append("a.canton = %s")
+        params.append(canton.upper())
+    if active_only:
+        clauses.append("j.end_date IS NULL")
+    where = " AND ".join(clauses) if clauses else "1=1"
+    rows = conn.execute(f"""
+        SELECT j.last_name, j.first_name, j.title, j.function, j.chamber,
+               j.language, j.start_date, j.end_date, j.party,
+               a.court_code, a.name_fr, a.canton, a.level
+        FROM judges j
+        JOIN authorities a ON a.id = j.authority_id
+        WHERE {where}
+        ORDER BY a.level DESC, j.last_name
+        LIMIT 50
+    """, params).fetchall()
+    if not rows:
+        return {"message": "No judges found. The roster is being populated — data will be added progressively."}
+    return [
+        {"last_name": r[0], "first_name": r[1], "title": r[2], "function": r[3],
+         "chamber": r[4], "language": r[5], "start_date": str(r[6]) if r[6] else None,
+         "end_date": str(r[7]) if r[7] else None, "party": r[8],
+         "court_code": r[9], "court_name": r[10], "canton": r[11], "court_level": r[12]}
+        for r in rows
+    ]
+
+
+def _get_legal_context(query: str, top_n: int = 2) -> list[dict]:
+    """Search doctrine_nodes for relevant legal context sheets."""
+    conn = _get_conn()
+    query_vec = _embed_query(query)
+    vec_text = _vec_to_text(query_vec)
+    # Hybrid: vector similarity + FTS
+    rows = conn.execute(
+        """SELECT id, title_fr, title_de, title_it, content, articles,
+                  1 - (embedding <=> %s::vector) AS similarity,
+                  ts_rank_cd(to_tsvector('simple', coalesce(title_fr,'') || ' ' || content),
+                             plainto_tsquery('simple', %s)) AS fts_score
+           FROM doctrine_nodes
+           WHERE embedding IS NOT NULL
+           ORDER BY (0.7 * (1 - (embedding <=> %s::vector)) + 0.3 * ts_rank_cd(
+               to_tsvector('simple', coalesce(title_fr,'') || ' ' || content),
+               plainto_tsquery('simple', %s))) DESC
+           LIMIT %s""",
+        (vec_text, query, vec_text, query, top_n),
+    ).fetchall()
+    return [
+        {"id": r[0], "title_fr": r[1], "title_de": r[2], "title_it": r[3],
+         "content": r[4], "articles": r[5],
+         "similarity": round(r[6], 4), "fts_score": round(r[7], 4)}
+        for r in rows
+    ]
+
+
 def _find_related(raw_id: str, top_n: int = 5) -> list[dict]:
     decision_id = _resolve_id(raw_id)
     conn = _get_conn()
@@ -1188,6 +1291,57 @@ TOOLS = [
              "top_n": {"type": "integer", "default": 5, "minimum": 1, "maximum": 20},
          }, "required": ["decision_id"]}),
 
+    Tool(name="get_legal_context",
+         description=(
+             "Get doctrinal context for a legal topic BEFORE searching case law. "
+             "Returns 1-3 structured knowledge sheets covering: key legal framework, "
+             "essential distinctions, central articles, recent developments, common pitfalls, "
+             "and trilingual terminology.\n\n"
+             "ALWAYS CALL THIS FIRST when researching a new legal question. It provides "
+             "the conceptual framing needed to search effectively and avoid common mistakes "
+             "(e.g., confusing bail d'habitation/commercial, résiliation ordinaire/extraordinaire, etc.).\n\n"
+             "Covers 116 domains of Swiss law: obligations, family, succession, real property, "
+             "criminal, procedure, enforcement, tax, social insurance, constitutional rights, etc."
+         ),
+         inputSchema={"type": "object", "properties": {
+             "query": {"type": "string", "description": (
+                 "Legal topic, concept, or statute reference. "
+                 "Examples: 'résiliation bail', 'prescription créance', 'détention provisoire', "
+                 "'Art. 41 OR', 'divorce entretien'"
+             )},
+             "top_n": {"type": "integer", "default": 2, "minimum": 1, "maximum": 5,
+                       "description": "Number of context sheets to return (default 2)"},
+         }, "required": ["query"]}),
+
+    Tool(name="get_authority",
+         description=(
+             "Get contact information and details for a Swiss judicial authority (court, tribunal, "
+             "regulatory body). Returns: full name (trilingual), address, phone, email, secure email "
+             "(IncaMail/Privasphere), website, jurisdiction, chambers, and hierarchy level.\n\n"
+             "Accepts court codes (e.g. 'bger', 'zh_obergericht', 'bvger') or search terms."
+         ),
+         inputSchema={"type": "object", "properties": {
+             "court_code": {"type": "string", "description": (
+                 "Court code (e.g. 'bger', 'zh_obergericht', 'bvger', 'ge_gerichte') "
+                 "or partial name to search"
+             )},
+             "canton": {"type": "string", "description": "Filter by canton (e.g. 'ZH', 'GE')"},
+         }}),
+
+    Tool(name="search_judges",
+         description=(
+             "Search the roster of Swiss judges and court clerks. Find judges by name, "
+             "court, function (président, juge, greffier), or chamber. Returns active judges "
+             "with their authority, function, and tenure.\n\n"
+             "Data sources: official court websites, annuaire.admin.ch, extracted from decisions."
+         ),
+         inputSchema={"type": "object", "properties": {
+             "name": {"type": "string", "description": "Last name (partial match supported)"},
+             "court_code": {"type": "string", "description": "Filter by court code"},
+             "function": {"type": "string", "description": "Filter: 'président', 'juge', 'greffier', 'suppléant'"},
+             "canton": {"type": "string", "description": "Filter by canton"},
+             "active_only": {"type": "boolean", "default": True, "description": "Only show currently active judges"},
+         }}),
 ]
 
 # Tools pending migration — not exposed until data is in Postgres:
@@ -1202,7 +1356,7 @@ TOOLS = [
 import collections
 import time as _time
 
-_RATE_LIMIT = int(os.environ.get("MCP_RATE_LIMIT", "20"))
+_RATE_LIMIT = int(os.environ.get("MCP_RATE_LIMIT", "60"))
 _RATE_WINDOW = 60
 _rate_buckets: dict[str, collections.deque] = {}
 
@@ -1302,6 +1456,14 @@ def _dispatch(name: str, args: dict):
         return r if r else {"error": f"No enrichment for '{args['decision_id']}'"}
     if name == "find_related":
         return _find_related(args["decision_id"], top_n=args.get("top_n", 5))
+    if name == "get_legal_context":
+        return _get_legal_context(query=args["query"], top_n=args.get("top_n", 2))
+    if name == "get_authority":
+        return _get_authority(court_code=args.get("court_code"), canton=args.get("canton"))
+    if name == "search_judges":
+        return _search_judges(name=args.get("name"), court_code=args.get("court_code"),
+                              function=args.get("function"), canton=args.get("canton"),
+                              active_only=args.get("active_only", True))
     return {"error": f"Unknown tool: {name}"}
 
 
