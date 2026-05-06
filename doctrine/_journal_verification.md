@@ -18,6 +18,8 @@ Méthodologie : skill `legal-fiche-verifier` (outil-d'abord, rapport par fiche).
 | Lot | Branche | Fiches | Date début | Date fin | Statut |
 |-----|---------|--------|-----------|----------|--------|
 | A1 | 1.1 personnes | 6 (1.1.4 créée) | 2026-05-04 | 2026-05-04 | ✅ |
+| A2 | 1.2.2bis MPUC + 1.2.3 régimes | 13 + 9 + 9 + 1 + 1 + 1 = 34 (créées) | 2026-05-04 | 2026-05-05 | ⏳ |
+| V | **7.9 violence domestique** (branche transversale) | 9 (1 pivot + 8 sous-fiches 7.9.1 à 7.9.8) | 2026-05-05 | 2026-05-05 | ⏳ |
 
 ---
 
@@ -42,6 +44,52 @@ Périmètre : 1.1.1, 1.1.2, 1.1.3, 1.1.5, 1.1.6 (1.1.4 absent du corpus).
 
 ---
 
+### Lot A2 — 1.2.3.9 Participation aux acquêts (10 fiches, dont 9 créées le 2026-05-05)
+
+Périmètre : sous-section 1.2.3.9 — régime ordinaire de la participation aux acquêts (CC 196-220).
+Source primaire : datalab Stämpfli `datalab-output-Acquêts.pdf.md` (2933 lignes, CC 196-219 + correctifs sur CC 207 al. 2 et CC 212-213).
+
+| # | Fiche | Articles | Date | Statut | Note brève |
+|---|-------|----------|------|--------|------------|
+| 1 | 1.2.3.9.1 | CC 196-197 | 2026-05-04 | ✨ | **Créée**. Cadre + 4 masses + définition des acquêts (~600 lignes). Couvre tous les cas pratiques : 1<sup>er</sup>/2<sup>e</sup>/3<sup>e</sup> pilier, assurances-vie, donations mixtes, plus-value conjoncturelle/industrielle, remploi, mélange de masses. |
+| 2 | 1.2.3.9.2 | CC 198-200 | 2026-05-05 | ✨ | **Créée**. 4 catégories de biens propres légaux (CC 198) + biens propres conventionnels ordinaires/réservés (CC 199) + 3 alinéas de CC 200 (fardeau de la preuve, présomption de copropriété, présomption d'acquêt). Articulation avec CC 930, CC 9, CC 195a. Pratique des litiges et stratégie de documentation. |
+| 3 | 1.2.3.9.3 | CC 201-203 | 2026-05-05 | ✨ | **Créée**. Administration/jouissance/disposition (CC 201) + 3 couches concentriques de limites légales + restriction copropriété al. 2 ; régime externe vs interne des dettes (CC 202) ; exigibilité et délais de paiement (CC 203). Articulation MPUC + LP. |
+| 4 | 1.2.3.9.4 | CC 204-205 | 2026-05-05 | ✨ | **Créée**. Moment de la dissolution (Stichtag) avec jurisprudence post-litispendance (RSU, cryptomonnaies, dettes post-dissolution, entreprise commerciale) ; reprise des biens et attribution préférentielle CC 205 al. 2 ; règlement des dettes réciproques. *ATF 143 III 233* + nombreux TF récents. |
+| 5 | 1.2.3.9.5 | CC 206 | 2026-05-05 | ✨ | **Créée**. Créance variable détaillée : 6 conditions cumulatives, méthode de calcul en 5 étapes, distinction intérêts/amortissement hypothécaires, pluralité de biens, moins-value, aliénation anticipée (al. 2), convention écrite (al. 3). Formule synthétique et arrêts clés. |
+| 6 | 1.2.3.9.6 | CC 207-209 | 2026-05-05 | ✨ | **Créée**. Composition + correctif LPP (CC 207) ; réunion fictive (CC 208) avec deux hypothèses + jurisprudence trusts/ATF 138 III 689 ; récompenses fixes (CC 209 al. 1) et variables (CC 209 al. 3). Exemple complet *ATF 141 III 53*. |
+| 7 | 1.2.3.9.7 | CC 210-214 | 2026-05-05 | ✨ | **Créée**. Calcul du bénéfice (CC 210) + déficit non partagé ; valeur vénale (CC 211) avec méthodes ; entreprise agricole CC 212 + LDFR + 3 correctifs (al. 2, droit au gain LDFR 28-34, clause de rigueur CC 213) ; moment de l'estimation (CC 214) avec jurisprudence sur biens aliénés post-dissolution. |
+| 8 | 1.2.3.9.8 | CC 215 | 2026-05-05 | ✨ | **Créée**. Créance de participation, compensation légale, cas avec déficit/acompte, exécution en nature 3<sup>e</sup> pilier A OPP3, exigibilité = clôture, prescription 10 ans CO 127 + suspension CO 134, mariage de courte durée et abus de droit. |
+| 9 | 1.2.3.9.9 | CC 216-217 | 2026-05-05 | ✨ | **Créée**. Modifications conventionnelles avec **réforme 2023** (CC 216 al. 2 nouveau = libéralité entre vifs, deux masses successorales) ; protection descendants non communs ; 3 exemples chiffrés détaillés (datalab) ; clause de divorce CC 217 al. 1 + extension CC 217 al. 2 (procédure de divorce pendante CC 472). |
+| 10 | 1.2.3.9.10 | CC 218-220 | 2026-05-05 | ✨ | **Créée**. Sursis CC 218 (différence avec CC 203, intérêts par défaut) ; logement et mobilier CC 219 (comparaison CC 612a, 5 conditions, prétentions graduées, aspects procéduraux) ; action contre tiers CC 220 (subsidiarité, délais péremptoires 1 an / 10 ans). Élargissement à CC 220 par rapport à l'index initial. |
+
+**Méthodologie A2** : fiches créées (et non pas vérifiées au sens du skill `legal-fiche-verifier`). Sources primaires : datalab Stämpfli intégral + jurisprudence ATF/TF citée par le datalab. Pas de vérification individuelle via le MCP caselaw — à effectuer dans une passe ultérieure pour confirmer chaque référence ATF/TF.
+
+**Reste à faire** dans la sous-section 1.2.3 :
+
+- 6 fiches MPUC en suspens (.16 à .21 — CC 179, CPC procédure MPUC, CPC 276 articulation divorce, CC 28b/c, violence transversale, DIPr MPUC) ;
+- 1.2.3.12 — DIPr du régime matrimonial (LDIP 51-58) ;
+- Vérification ultérieure du lot A2 via le skill `legal-fiche-verifier` (chaque article + chaque ATF via MCP caselaw).
+
+### Lot A2 — 1.2.3.10 Communauté de biens (1 fiche unifiée, créée le 2026-05-05)
+
+Périmètre : régime conventionnel rare et complexe (CC 221-246).
+Source primaire : datalab Stämpfli `datalab-output-Communauté.pdf.md` (1896 lignes, CC 221-246).
+
+| # | Fiche | Articles | Date | Statut | Note brève |
+|---|-------|----------|------|--------|------------|
+| 1 | 1.2.3.10 | CC 221-246 | 2026-05-05 | ✨ | **Créée**. Fiche unifiée vu la rareté pratique du régime (datalab plaide pour son abandon de lege ferenda). Couvre : 3 types de communauté (universelle CC 222, acquêts CC 223, autres CC 224) ; 3 masses ; modification immédiate des rapports de propriété ; biens propres CC 225 (4 sources) ; présomption CC 226 ; administration ordinaire/extraordinaire CC 227-228 + concurrence avec CC 166 ; profession commune CC 229 ; successions CC 230 ; responsabilité CC 231 + frais ; biens propres CC 232 ; dettes générales CC 233 / propres CC 234 + action en enrichissement ; LP 68a-68b ; dissolution CC 236 (faillite incluse !) ; capital prévoyance CC 237 ; récompenses CC 238 ; plus-value CC 239 → CC 206 ; estimation CC 240 ; partage CC 241-242 (avec réforme 2023 al. 4) ; logement et mobilier CC 244 ; renvoi successoral CC 246. Inclut : *ATF 112 II 390*, *ATF 116 Ib 447*, *ATF 133 III 669*, *ATF 136 III 123*, *TF 5A_623/2007*, *TPF BB.2018.51*, *ACJC GE 1646/2013*. 17 pièges + nombreuses controverses doctrinales (BADDELEY/BREITSCHMID sur CC 242 al. 1, MEIER vs majorité sur CC 226 inversé, etc.). |
+
+### Lot A2 — 1.2.3.11 Séparation de biens (1 fiche unifiée, créée le 2026-05-05)
+
+Périmètre : régime conventionnel + extraordinaire + légal (CC 247-251).
+Source primaire : datalab Stämpfli `datalab-output-séparation de biens.pdf.md` (443 lignes — régime court qui renvoie largement aux dispositions de la participation aux acquêts).
+
+| # | Fiche | Articles | Date | Statut | Note brève |
+|---|-------|----------|------|--------|------------|
+| 1 | 1.2.3.11 | CC 247-251 | 2026-05-05 | ✨ | **Créée**. Fiche unifiée. Couvre : 3 voies d'accès (conventionnelle CC 182-184, extraordinaire CC 185 / 176 al. 1 ch. 3, légale CC 118 / 188 / LDIP 54 al. 3) ; dissociation totale des patrimoines (un seul patrimoine par époux, pas de masses) ; renvois explicites à la participation aux acquêts (CC 247 ↔ 201 al. 1 ; 248 ↔ 200 al. 1-2 ; 249 ↔ 202 ; 250 ↔ 203 ; 251 ↔ 205 al. 2) ; CC 251 attribution préférentielle ; controverse CC 206 par analogie (*TF 5C.137/2001* refus / *TF 5A_742/2011* laissée ouverte) ; correctif jurisprudentiel d'entretien post-divorce *ATF 129 III 7* ; régime partenarial légal LPart 18-25 ; analyse coûts/bénéfices du choix de régime ; 15 pièges pratiques. Jurisprudence vérifiée : *ATF 116 III 32*, *ATF 117 II 124*, *ATF 119 Ia 453*, *ATF 119 II 197*, *ATF 129 III 7*, plus 13 arrêts TF récents (2001-2022). |
+
+---
+
 ## Méthodologie appliquée
 
 Conformément au skill `legal-fiche-verifier` (cf. `/Users/damienhottelier/Documents/GitHub/caselaw-repo-1/doctrine/legal-fiche-verifier.skill`) :
@@ -54,3 +102,50 @@ Conformément au skill `legal-fiche-verifier` (cf. `/Users/damienhottelier/Docum
 6. Édition chirurgicale après backup.
 7. Rapport structuré (sources, OK, erreurs, hésitations, lacunes, recommandations).
 8. Diff + maj du journal.
+
+---
+
+### Lot V — 7.9 Violence domestique (branche transversale, 9 fiches créées le 2026-05-05)
+
+**Périmètre** : nouvelle branche transversale `7_transversal/7.9*` couvrant la violence domestique sous tous ses angles. Réorientation du slot 1.2.2bis.20 (initialement prévu comme « TRANSVERSAL ») vers la branche 7.9 dédiée.
+
+**Sources primaires** :
+- **Convention d'Istanbul** (RS 0.311.35, en vigueur Suisse 1.4.2018)
+- **Guide CSVD/CCDJP/CDAS** *Violence domestique : quel contact après la séparation des parents ?* (2022, 71 pages, 11 annexes — Krüger & Reichlin)
+- **Reichenbach Milone S.** *Violences conjugales et parentalité* (Office cantonal de l'égalité et de la famille du Valais, mars 2023)
+- **Helle N.** *Audition de l'enfant : enjeux et modalités* (COPMA/KOKES, Atelier 9, Bienne 2014)
+- **Directive SEM AIG « Domaine des étrangers »**, état au 1.1.2025
+- **Büchler A.** *Arrangement des contacts parents/enfants en cas de séparation à la suite de violences domestiques* (Expertise BFEG 2015)
+- **MMI/UNICEF Suisse** brochures *Mon opinion compte !* (5 brochures par tranches d'âge, 2014)
+- **BFEG Bulletins d'information** A1-A6, B3, C1
+- **OFS / SPC** Statistiques violence domestique 2019-2021
+- **Plan d'action national 2022-2026** contre la violence à l'égard des femmes et la violence domestique (Conseil fédéral)
+
+| # | Fiche | Articles principaux | Date | Statut | Note brève |
+|---|-------|---------------------|------|--------|------------|
+| 1 | 7.9 (pivot) | Convention Istanbul ; CC 28b/c ; CC 273-274 ; CC 314a ; CP 55a, 67b, 122-126, 180-181a, 189-198, 219 ; LAVI ; LEI 50 | 2026-05-05 | ✨ | **Fiche-pivot transversale**. Cadre conceptuel : définition Convention d'Istanbul + 6 formes de violence ; typologies Johnson (violence ponctuelle vs coercitive systématique) + cycle Walker ; mécanismes psychologiques (emprise, ambivalence, impuissance apprise) ; dynamique post-séparation ; enfants exposés (3 formes de victimisation) ; distinction conflit↔violence (PPP, tableau Reichenbach VS, Dettenborn & Walter) ; cadre normatif complet (international + fédéral + cantonal) ; cartographie des autorités (figure 2 CSVD — 6 colonnes) ; 8 principes directeurs, 7 signaux d'alerte, règles cardinales audition enfant ; 13 articulations transversales ; 10 pièges récurrents ; évolutions 1.4.2018 / 1.7.2020 / 1.7.2024 / 1.1.2022 / 1.1.2025 / 2025. **49 Ko**. |
+| 2 | 7.9.1 | CC 28b | 2026-05-05 | ✨ | **CC 28b protection civile**. Texte complet (al. 1-4) ; 3 comportements protégés ; champ personnel large ; catalogue mesures (interdictions périmètre/lieux/contact + expulsion + indemnité + attribution bail) ; coordination loi de police cantonale ; conditions de fond (atteinte/risque, vraisemblance, proportionnalité) ; procédure (CPC 261-265 + superprovisionnelle) ; sanction CP 292 ; devoir cantonal d'aviser ; 8 articulations transversales ; 10 pièges ; **modèle de conclusions** ; évolutions 2007/2020/2022. **31 Ko**. |
+| 3 | 7.9.2 | CC 28c | 2026-05-05 | ✨ | **CC 28c surveillance électronique**. Texte (al. 1-4) ; conditions cumulatives ; mécanique technique (bracelet GPS, géofencing, architecture cantonale) ; durée et prolongation ; procédure ; coordination CC 28b/CPP 237/CP 67b ; mise en œuvre cantonale (variable) ; position critique et limites ; 7 pièges ; **modèle de conclusions** ; évolutions 1.1.2022. **17 Ko**. |
+| 4 | 7.9.3 | CC 273-275 ; CC 296-310 ; CC 314-314a ; CC 314abis ; CDE 12 ; CPC 298 ; Convention Istanbul art. 26, 31, 48 | 2026-05-05 | ✨ | **Violence et contacts parent-enfant — fiche centrale**. Notions de base (garde, autorité parentale, relations personnelles, garde alternée) ; compétences (APEA / tribunal) ; **audition de l'enfant** (CDE 12, CPC 298, CC 314a) avec posture, méthode, types de questions, capacités par âge, brochures UNICEF/MMI 2014 ; cadre juridique des relations personnelles (CC 273-274) — proportionnalité, hiérarchie des mesures (refus/retrait, suspension, visites accompagnées, curatelle CC 308) ; **critique scientifique de l'aliénation parentale** (annexe 11 CSVD) — Bensussan 2017, Côté/Lapierre/Dupuis-Néri 2018, Romito 2009-2011, **étude Meier 2019 (4338 jugements US)**, Convention Istanbul art. 26 et 31 ; conditions cumulatives pour relations personnelles ; protocole Reichenbach VS ; **modèle de conclusions complet** ; 10 pièges. **49 Ko**. |
+| 5 | 7.9.4 | CC 274, 308 ; CP 55a, 67b ; CPP 237 | 2026-05-05 | ✨ | **Stratégies des personnes violentes** (annexes CSVD 7-10). Stratégies d'influence sur la victime + sur l'environnement (Tableau 1 CSVD — minimiser/banaliser/justifier/fausses déclarations/rejet de la responsabilité avec contre-stratégies) ; **8 motifs de complaisance** d'Elfriede Fröschl ; distinction conflit haut↔violence (Dettenborn & Walter) ; **8 échelons de prise de responsabilités** (Koesling) avec questions d'évaluation ; conséquences en termes de mesures de visite ; synthèse opérationnelle ; 8 pièges. **34 Ko**. |
+| 6 | 7.9.5 | CP 55a, 67b, 122-126, 129, 173-177, 180-181a, 183, 189-198, 197a, 219-220, 292 ; CPP 116-118, 152-154, 217-238 | 2026-05-05 | ✨ | **Aspects pénaux**. Infractions principales (avec poursuite d'office en VD : CP 123 ch. 2, 126 ch. 2, 180 ch. 2) ; mariage forcé CP 181a ; **réforme 1.7.2024** (CP 189-198 droit pénal sexuel ; CP 197a revenge porn) ; CP 219 enfants exposés ; **CP 55a suspension** (réforme 1.7.2020) avec autonomie d'appréciation MP/tribunal ; CPP 237 mesures de substitution + surveillance électronique ; CP 67b interdiction post-condamnation ; coordination civil↔pénal ; action civile par adhésion CPP 122 ss ; victime CPP 116-117 ; 10 pièges ; **modèle de plainte pénale**. **39 Ko**. |
+| 7 | 7.9.6 | LAVI 1-30 ; OAVI ; CPP 116-117 | 2026-05-05 | ✨ | **LAVI**. Champ d'application (victime LAVI 1 al. 1, proches al. 2) ; centres de consultation (conseil, aide immédiate LAVI 13, aide à long terme LAVI 14, anonymat LAVI 11) ; aide financière (indemnité plafond 120k, réparation morale plafond 70k, échelle indicative en VD) ; subsidiarité LAVI 4 ; procédure d'octroi ; articulations clés (procédure pénale, civile, LEI 50) ; coordonnées clés (numéros nationaux + réseaux) ; **modèle de demande LAVI** ; 10 pièges. **24 Ko**. |
+| 8 | 7.9.7 | LEI 30, 32, 42-45, 50, 52, 58a, 77, 85c, 90, 96-97 ; OASA 31, 49, 77, 77f ; LDIP 17, 44, 45, 47 ; CC 105, 105a ; CP 181a | 2026-05-05 | ✨ | **LEI 50 violence et migrations**. Architecture LEI 50 al. 1 (3 ans + intégration / RPM) + al. 2 (3 RPM : violence, mariage forcé, réintégration compromise) ; **réforme 1.1.2025** : élargissement aux titres précaires (B, L, F + concubins LEI 30) ; **6 indices de violence domestique LEI 50 al. 2 let. a ch. 1-6** détaillés ; critères qualitatifs (mauvais traitements systématiques, asymétrie de pouvoir) ; adaptation des critères d'intégration LEI 58a / OASA 77f let. c ch. 4 ; mariage forcé / mariage avec mineur (LDIP 45 al. 3 réformé 2025) ; recouvrement droit de séjour ; obligation de collaborer (LEI 90) + maxime instruction autorité ; jurisprudence TF abondante ; **modèle de demande LEI 50** ; 10 pièges. **35 Ko**. |
+| 9 | 7.9.8 | Tous articles couverts par 7.9 à 7.9.7 | 2026-05-05 | ✨ | **Check-list pratique avocat·e — synthèse opérationnelle**. Premier entretien (évaluation danger immédiat, identification dossier, caractérisation violence, cartographie procédurale, réseau actuel) ; pièces à demander dès la consultation (bases, probatoires : police-pénal-médical-électroniques-témoignages) ; mesures urgentes 24-48h (sécurité, civiles superprovisionnelles, pénales, enfants, patrimoniales) ; réseau cantonal (numéros nationaux + cantons romands + alémanique + Tessin) ; **stratégie procédurale sur 90 jours** (4 phases) ; **modèles complets** : superprovisoires CC 28b, MPUC, plainte pénale, demande LAVI, demande LEI 50 ; top 10 erreurs à éviter ; outils concrets pour le cabinet ; **plan de sécurité type pour la cliente/le client** ; cas particuliers fréquents (étranger·e, enfants exposés, LGBTQ+, auteur·e victime aussi, stalking, mariage forcé). **30 Ko**. |
+
+**Total** : 9 fiches, **~308 Ko** de doctrine, structurées en branche transversale 7.9*.
+
+**Réorientation** : le slot 1.2.2bis.20 (initialement « TRANSVERSAL ») a été marqué **DÉPLACÉ → branche 7.9** dans l'index 1.2.2bis pour éviter le doublon.
+
+**Ressources documentaires absorbées** :
+- Guide CSVD/CCDJP/CDAS 2022 — intégralité 71 pages
+- Reichenbach Milone VS 2023 — intégralité 21 slides
+- Helle COPMA 2014 — intégralité 11 pages
+- Directive SEM AIG 2025 — intégralité 10 pages
+
+**Méthodologie** : fiches **créées** (et non vérifiées au sens du skill `legal-fiche-verifier`). Sources primaires absorbées + jurisprudence et doctrine citées intégralement avec références. **Pas de vérification individuelle** des ATF cités via le MCP caselaw — à effectuer dans une passe ultérieure.
+
+**Prochain reste à faire** :
+- Lot A2 : 6 fiches MPUC (CC 179, CPC procédure MPUC, CPC 276, autres) ; 1.2.3.12 DIPr matrimonial
+- Vérification individuelle (passe legal-fiche-verifier) sur les lots A2 et V
+- Branches 1.2.4 (divorce), 1.2.5 (successions), 1.2.7-1.2.10 (enfants) à venir
