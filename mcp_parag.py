@@ -840,6 +840,64 @@ def _get_enrichment(raw_id: str) -> dict | None:
 # 19. find_related
 # ---------------------------------------------------------------------------
 
+def _get_article_history(sr_number: str, article: str, language: str = "de", as_of: str | None = None) -> dict:
+    """Get version history of a law article, or text at a specific date."""
+    conn = _get_conn()
+    if as_of:
+        # Return the version in force at that date
+        row = conn.execute("""
+            SELECT heading, text, footnote, valid_from, valid_to, status, change_type, change_ref, diff_summary
+            FROM article_versions
+            WHERE sr_number = %s AND article_num = %s AND lang = %s
+              AND valid_from <= %s AND (valid_to IS NULL OR valid_to > %s)
+            ORDER BY valid_from DESC LIMIT 1
+        """, (sr_number, article, language, as_of, as_of)).fetchone()
+        if not row:
+            return {"error": f"No version found for art. {article} SR {sr_number} ({language}) as of {as_of}"}
+        return {
+            "sr_number": sr_number, "article": article, "language": language, "as_of": as_of,
+            "heading": row[0], "text": row[1], "footnote": row[2],
+            "valid_from": str(row[3]), "valid_to": str(row[4]) if row[4] else None,
+            "status": row[5], "change_type": row[6],
+        }
+    # Full history
+    rows = conn.execute("""
+        SELECT heading, text, valid_from, valid_to, status, change_type, change_ref, diff_summary
+        FROM article_versions
+        WHERE sr_number = %s AND article_num = %s AND lang = %s
+        ORDER BY valid_from ASC
+    """, (sr_number, article, language)).fetchall()
+    if not rows:
+        return {"error": f"No history found for art. {article} SR {sr_number} ({language}). Run update_laws.py first."}
+    versions = [
+        {"heading": r[0], "text": r[1], "valid_from": str(r[2]),
+         "valid_to": str(r[3]) if r[3] else None,
+         "status": r[4], "change_type": r[5], "change_ref": r[6], "diff_summary": r[7]}
+        for r in rows
+    ]
+    current = next((v for v in versions if v["status"] == "in_force"), versions[-1])
+    return {
+        "sr_number": sr_number, "article": article, "language": language,
+        "current_text": current["text"],
+        "current_heading": current["heading"],
+        "total_versions": len(versions),
+        "versions": versions,
+    }
+
+
+def _translate_decision(raw_id: str, target_lang: str) -> dict:
+    """Translate a decision, using cache if available."""
+    decision_id = _resolve_id(raw_id)
+    conn = _get_conn()
+    from search_stack.parag.translator import translate_decision, get_cached_translation
+    # Check cache first (fast path)
+    cached = get_cached_translation(conn, decision_id, target_lang)
+    if cached:
+        return cached
+    # Full translation (slow path — 30-60s)
+    return translate_decision(conn, decision_id, target_lang)
+
+
 def _get_authority(court_code: str | None = None, canton: str | None = None) -> list[dict]:
     """Lookup authority by court_code or canton."""
     conn = _get_conn()
@@ -1342,6 +1400,39 @@ TOOLS = [
              "canton": {"type": "string", "description": "Filter by canton"},
              "active_only": {"type": "boolean", "default": True, "description": "Only show currently active judges"},
          }}),
+    Tool(name="translate_decision",
+         description=(
+             "Translate a Swiss court decision to another language (FR/DE/IT/EN). "
+             "Uses a cache: if the translation already exists, returns it instantly. "
+             "Otherwise, translates the full text + regeste using Gemini 2.5 Flash "
+             "with professional legal terminology.\n\n"
+             "Swiss law abbreviations are automatically converted to the target language "
+             "(OR→CO, ZGB→CC, StGB→CP, SchKG→LP, BGG→LTF, etc.).\n\n"
+             "First translation takes 30-60 seconds. Subsequent requests for the same "
+             "decision+language are instant (cached)."
+         ),
+         inputSchema={"type": "object", "properties": {
+             "decision_id": {"type": "string", "description": "decision_id, BGE ref, or docket number"},
+             "target_lang": {"type": "string", "enum": ["fr", "de", "it", "en"],
+                             "description": "Target language for translation"},
+         }, "required": ["decision_id", "target_lang"]}),
+
+    Tool(name="get_article_history",
+         description=(
+             "Get the complete version history of a Swiss law article. Returns ALL versions "
+             "chronologically: initial text, each modification, and current version — with dates, "
+             "change descriptions, and diff summaries.\n\n"
+             "Use this to understand how a provision has evolved over time, identify when a "
+             "specific change was introduced, or find the text as it was at a specific date.\n\n"
+             "With `as_of`: returns the text as it was in force on that date.\n"
+             "Without `as_of`: returns the full chronological history."
+         ),
+         inputSchema={"type": "object", "properties": {
+             "sr_number": {"type": "string", "description": "SR number (e.g. '220' for OR, '210' for ZGB)"},
+             "article": {"type": "string", "description": "Article number (e.g. '41', '8')"},
+             "language": {"type": "string", "enum": ["de", "fr", "it"], "default": "de"},
+             "as_of": {"type": "string", "description": "ISO date (e.g. '2020-01-01') — returns the version in force at that date"},
+         }, "required": ["sr_number", "article"]}),
 ]
 
 # Tools pending migration — not exposed until data is in Postgres:
@@ -1464,6 +1555,11 @@ def _dispatch(name: str, args: dict):
         return _search_judges(name=args.get("name"), court_code=args.get("court_code"),
                               function=args.get("function"), canton=args.get("canton"),
                               active_only=args.get("active_only", True))
+    if name == "translate_decision":
+        return _translate_decision(args["decision_id"], args["target_lang"])
+    if name == "get_article_history":
+        return _get_article_history(sr_number=args["sr_number"], article=args["article"],
+                                    language=args.get("language", "de"), as_of=args.get("as_of"))
     return {"error": f"Unknown tool: {name}"}
 
 

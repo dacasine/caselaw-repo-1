@@ -16,6 +16,12 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
+class BudgetExhaustedError(Exception):
+    """Raised when OpenRouter returns 402/403 due to exhausted credits.
+    This is a FATAL error — all workers should stop immediately."""
+    pass
+
+
 from search_stack.parag.llm_client import (
     DEFAULT_BASE_URL as _SYN_URL,
     LLMResponse,
@@ -146,6 +152,18 @@ class OpenRouterClient:
                     raw = resp.read()
                 break
             except urllib.error.HTTPError as e:
+                # 402/403 from OpenRouter = budget exhausted → stop immediately
+                if e.code in (402, 403):
+                    try:
+                        body_text = e.read().decode("utf-8", errors="replace")
+                    except Exception:
+                        body_text = ""
+                    if "PROHIBITED_CONTENT" in body_text:
+                        raise  # Genuine content filter — let caller handle
+                    raise BudgetExhaustedError(
+                        f"OpenRouter budget exhausted (HTTP {e.code}). "
+                        "Top up credits at https://openrouter.ai/credits"
+                    ) from e
                 transient = e.code == 429 or 500 <= e.code < 600
                 if not transient or attempt >= len(backoffs):
                     raise

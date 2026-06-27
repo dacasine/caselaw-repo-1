@@ -203,6 +203,29 @@ def related(decision_id: str, top_n: int = Query(5, ge=1, le=20)):
     return {"decision_id": decision_id, "related": results}
 
 
+@app.get("/decision/{decision_id}/translate", dependencies=[Depends(_check_auth)])
+def translate(
+    decision_id: str,
+    lang: str = Query(..., description="Target language: fr, de, it, en"),
+):
+    """Translate a decision to another language. Cached after first call."""
+    if lang not in ("fr", "de", "it", "en"):
+        raise HTTPException(400, "lang must be fr, de, it, or en")
+    pg = _get_pg()
+    if not pg:
+        raise HTTPException(503, "Postgres unavailable")
+    from search_stack.parag.translator import translate_decision, get_cached_translation
+    # Fast path: cache
+    cached = get_cached_translation(pg, decision_id, lang)
+    if cached:
+        return cached
+    # Slow path: translate (30-60s)
+    result = translate_decision(pg, decision_id, lang)
+    if "error" in result:
+        raise HTTPException(404, result["error"])
+    return result
+
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", "8000"))

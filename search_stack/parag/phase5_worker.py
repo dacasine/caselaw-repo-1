@@ -103,7 +103,18 @@ def _should_skip(
     ).fetchone()
     if row is None:
         return False
-    return row[0] == src_hash and row[1] >= prompt_version and row[2] in ("ok", "schema_invalid")
+    # Skip ok/schema_invalid (done) AND 403 errors (content blocked by Gemini — needs different model)
+    if row[2] in ("ok", "schema_invalid"):
+        return row[0] == src_hash and row[1] >= prompt_version
+    if row[2] == "error":
+        # Check if it's a 403 content filter — don't retry with same model
+        error_msg = conn.execute(
+            "SELECT error_message FROM decision_enrichment WHERE decision_id=%s",
+            (decision_id,),
+        ).fetchone()
+        if error_msg and error_msg[0] and "403" in error_msg[0]:
+            return True
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -216,7 +227,7 @@ def process_decision(
 
     # LLM call (no DB connection held)
     try:
-        resp = client.chat(system=system, user=user, max_tokens=6000, temperature=0.1)
+        resp = client.chat(system=system, user=user, max_tokens=12000, temperature=0.1)
     except Exception as exc:
         with pool.connection() as conn:
             _store_decision_enrichment(
@@ -352,11 +363,22 @@ def run_many(
             use_light_prompt=use_light_prompt, force=force,
         )
 
+    from search_stack.parag.openrouter_client import BudgetExhaustedError
+
     with ThreadPoolExecutor(max_workers=n_workers) as executor:
         futures = [executor.submit(work, r) for r in rows]
         done = 0
         for fut in as_completed(futures):
-            r = fut.result()
+            try:
+                r = fut.result()
+            except BudgetExhaustedError as e:
+                # FATAL: cancel all remaining futures and exit
+                for f in futures:
+                    f.cancel()
+                print(f"\n  *** BUDGET EXHAUSTED — stopping all workers ***\n  {e}",
+                      file=sys.stderr, flush=True)
+                agg["budget_exhausted"] = True
+                break
             done += 1
             agg[r.status] = agg.get(r.status, 0) + 1
             agg["latency_sum"] += r.latency_s

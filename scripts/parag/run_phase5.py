@@ -43,7 +43,9 @@ def fetch_rows(
             )
         filters.append(
             "NOT EXISTS (SELECT 1 FROM decision_enrichment de "
-            "WHERE de.decision_id = d.decision_id AND de.status IN ('ok','schema_invalid'))"
+            "WHERE de.decision_id = d.decision_id AND ("
+            "de.status IN ('ok','schema_invalid') OR "
+            "(de.status = 'error' AND de.error_message LIKE '%%403%%')))"
         )
         where = " AND ".join(filters)
         sql = (

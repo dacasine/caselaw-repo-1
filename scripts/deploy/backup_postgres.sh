@@ -105,27 +105,25 @@ fi
 # S3: only rotate if upload succeeded
 
 _local_rotate() {
-    local tier=$1 keep_days=$2
+    local tier=$1 keep_n=$2
     local count
     count=$(ls -1 "$BACKUP_DIR"/caselaw_${tier}_*.sql.gz 2>/dev/null | wc -l)
-    if [ "$count" -le 1 ]; then
-        echo "  local ${tier}: only ${count} backup(s), skipping rotation"
+    if [ "$count" -le "$keep_n" ]; then
+        echo "  local ${tier}: ${count} backup(s), keeping all (max ${keep_n})"
         return
     fi
-    # Keep at least 1 backup even if older than keep_days
-    local deleted=0
-    find "$BACKUP_DIR" -name "caselaw_${tier}_*.sql.gz" -mtime +${keep_days} | sort | head -n -1 | while read -r f; do
+    # Delete oldest, keep the N most recent
+    ls -t "$BACKUP_DIR"/caselaw_${tier}_*.sql.gz | tail -n +$((keep_n + 1)) | while read -r f; do
         rm -f "$f"
         rm -f "${f%.sql.gz}_counts.txt"
-        deleted=$((deleted + 1))
         echo "  local deleted: $(basename "$f")"
     done
 }
 
 echo "$(date '+%Y-%m-%d %H:%M:%S') [backup] Local rotation:"
-_local_rotate daily   7
-_local_rotate weekly  30
-_local_rotate monthly 365
+_local_rotate daily   3
+_local_rotate weekly  1
+_local_rotate monthly 2
 
 if [ "$S3_OK" = "1" ]; then
     echo "$(date '+%Y-%m-%d %H:%M:%S') [backup] S3 rotation:"
